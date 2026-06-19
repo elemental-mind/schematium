@@ -54,9 +54,7 @@ const SampleTemplate = {
     }
 } satisfies ObjectTemplate;
 
-const testVar = SubTemplate;
-type test = typeof testVar;
-type resolution = Resolve<typeof testVar>;
+type test = Concrete<typeof SampleTemplate>;
 
 //----------------------------------------------
 
@@ -69,6 +67,8 @@ abstract class ValueTemplate<T>
      * @param value 
      */
     abstract fromString(value: string): T;
+
+    abstract validateType(value: T): boolean;
 
     /**
    * Used for validating the value after parsing
