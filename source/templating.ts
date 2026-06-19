@@ -27,7 +27,6 @@ type Resolve<T extends TypesParameter> =
     T extends ObjectTemplate ? Concrete<T> :
     T extends Array<infer E extends TypeOption> ? Resolve<E> :
     never;
-
 type Concrete<T extends ObjectTemplate> = {
     [K in keyof T]:
     T[K] extends ValueAPI<infer V> ? V :
@@ -236,9 +235,10 @@ class ListTemplate<V> extends CollectionTemplate<Record<string, V>, V>
      * concrete `TypeOption`s. The provided types are stored verbatim as the
      * template's `entryShape` and used to validate / coerce parsed entries.
      */
-    static fromTypeInput<T extends TypesParameter>(types: T): ListTemplate<Resolve<T>>
+    static fromTypes<T extends TypeOption[]>(...types: T): ListTemplate<Resolve<T[number]>>
     {
-        return new ListTemplate<Resolve<T>>(types);
+        const entryShape = types.length === 1 ? types[0] : types;
+        return new ListTemplate<Resolve<T[number]>>(entryShape);
     }
 
     fromString(value: string): Record<string, V>
@@ -267,7 +267,7 @@ class ListTemplate<V> extends CollectionTemplate<Record<string, V>, V>
 }
 
 export const list = ListTemplate.fromDefault as <T extends Record<string, boolean> | Record<string, number> | Record<string, string>>(defaultValue: T) => CollectionAPI<T>;
-export const listOf = ListTemplate.fromTypeInput as <T extends TypesParameter>(types: T) => TypedCollectionAPI<Record<string, Resolve<T>>>;
+export const listOf = ListTemplate.fromTypes as <T extends TypeOption[]>(...types: T) => TypedCollectionAPI<Record<string, Resolve<T[number]>>>;
 
 //==============================================
 // Array  (V[])
@@ -298,9 +298,10 @@ class ArrayTemplate<V> extends CollectionTemplate<V[], V>
      * concrete `TypeOption`s. The provided types are stored verbatim as the
      * template's `entryShape` and used to validate / coerce parsed entries.
      */
-    static fromTypeInput<T extends TypesParameter>(types: T): ArrayTemplate<Resolve<T>>
+    static fromTypes<T extends TypeOption[]>(...types: T): ArrayTemplate<Resolve<T[number]>>
     {
-        return new ArrayTemplate<Resolve<T>>(types);
+        const entryShape = types.length === 1 ? types[0] : types;
+        return new ArrayTemplate<Resolve<T[number]>>(entryShape);
     }
 
     fromString(value: string): V[]
@@ -329,7 +330,7 @@ class ArrayTemplate<V> extends CollectionTemplate<V[], V>
 }
 
 export const array = ArrayTemplate.fromDefault as <T extends boolean[] | number[] | string[]>(defaultValue: T) => CollectionAPI<T>;
-export const arrayOf = ArrayTemplate.fromTypeInput as <T extends TypesParameter>(types: T) => TypedCollectionAPI<Array<Resolve<T>>>;
+export const arrayOf = ArrayTemplate.fromTypes as <T extends TypeOption[]>(...types: T) => TypedCollectionAPI<Resolve<T[number]>[]>;
 
 //==============================================
 // Example Usage
@@ -344,11 +345,10 @@ const SampleTemplate = {
     number: number(123).accepts(number => number < 256),
     bool: bool(),
     string: string(),
-    array: arrayOf([number, string]).withDefault([]).accepts(array => array.length < 100).acceptsEntries(entry => true),
+    array: arrayOf(number, string).withDefault([]).accepts(array => array.length < 100).acceptsEntries(entry => true),
     list: listOf(SubTemplate).withDefault({ sample: { sampleParameter: 123, sampleValue: "text" } }).acceptsEntries(([key, value]) => true),
     deep: {
         bar: array(["bla", "bla"])
     }
 } satisfies ObjectTemplate;
 
-type test = Concrete<typeof SampleTemplate>;
