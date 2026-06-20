@@ -4,7 +4,6 @@
 
 interface ParsingAPI<T>
 {
-    hydrate: (value: T) => T;
     fromString: (value: string) => T;
 }
 
@@ -95,7 +94,6 @@ abstract class ValueTemplate<T> implements ParsingAPI<T>, ValidationAPI<T>, Valu
         return this;
     }
 
-    abstract hydrate(value: T): T;
     abstract fromString(value: string): T;
 
     validate(value: T): boolean { return this.customValidator ? this.customValidator(value) : true; }
@@ -108,7 +106,6 @@ abstract class ValueTemplate<T> implements ParsingAPI<T>, ValidationAPI<T>, Valu
 class StringTemplate extends ValueTemplate<string>
 {
     fromString(value: string): string { return value; }
-    hydrate(value: string): string { return value; }
     validate(value: unknown): value is string { return typeof value === "string" && super.validate(value); }
 }
 
@@ -134,7 +131,6 @@ class NumberTemplate extends ValueTemplate<number>
             throw new Error(`Cannot parse "${value}" as number`);
         return parsed;
     }
-    hydrate(value: number): number { return value; }
     validate(value: unknown): value is number { return typeof value === "number" && Number.isFinite(value) && super.validate(value); }
 }
 
@@ -160,7 +156,6 @@ class BooleanTemplate extends ValueTemplate<boolean>
         if (lowered === "false" || lowered === "0") return false;
         throw new Error(`Cannot parse "${value}" as boolean`);
     }
-    hydrate(value: boolean): boolean { return value; }
     validate(value: unknown): value is boolean { return typeof value === "boolean" && super.validate(value); }
 }
 
@@ -212,22 +207,6 @@ class VariadicTemplate<T> extends ValueTemplate<T>
         throw new Error("Could not match input to any possible type");
     }
 
-    hydrate(valueObject: any): T
-    {
-        if (typeof valueObject === "object") 
-        {
-            const nonPrimitiveTemplates = this.permittedTypes.filter(type => type instanceof ObjectTemplate) as ObjectTemplate<any>[];
-            for (const template of nonPrimitiveTemplates)
-                try
-                {
-                    return template.hydrate(valueObject);
-                }
-                catch (e) { continue; }
-        }
-
-        return valueObject;
-    }
-
     validateValue(value: T, type: any)
     {
         if (!type.validate(value))
@@ -264,17 +243,7 @@ class ObjectTemplate<T> extends ValueTemplate<T>
 
     fromString(value: string): T
     {
-        const rawValues = JSON.parse(value);
-        return this.hydrate(rawValues);
-    }
-
-    hydrate(value: any): T
-    {
-        for (const [key, configuration] of Object.entries(this.template))
-            if (value[key] && configuration instanceof ValueTemplate)
-                value[key] = configuration.hydrate(value[key]);
-
-        return value;
+        return JSON.parse(value);
     }
 
     validate(value: T): boolean
@@ -364,8 +333,6 @@ class ListTemplate<V> extends CollectionTemplate<Record<string, V>>
         return parsed as Record<string, V>;
     }
 
-    hydrate(value: Record<string, V>): Record<string, V> { return value; }
-
     validateType(value: unknown): boolean
     {
         return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -417,8 +384,6 @@ class ArrayTemplate<V> extends CollectionTemplate<V[]>
             throw new Error(`Cannot parse "${value}" as array`);
         return parsed as V[];
     }
-
-    hydrate(value: V[]): V[] { return value; }
 
     validateType(value: unknown): boolean
     {
