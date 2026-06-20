@@ -1,33 +1,47 @@
-type PrimitiveTypeString = "number" | "string" | "boolean";
-type PrimitiveTemplate = typeof number | typeof string | typeof boolean;
-interface PrimitiveHydrationAPI<T>
+//==============================================
+// Contracts
+//==============================================
+
+interface ParsingAPI<T>
 {
     hydrate: (value: T) => T;
     fromString: (value: string) => T;
+}
+
+interface ValidationAPI<T>
+{
     validate: (value: T) => boolean;
 }
+
 interface ValueDefinitionAPI<T>
 {
+    required: ValueDefinitionAPI<T>,
+    optional: ValueDefinitionAPI<T>,
     accepts: (validator: (value: T) => boolean) => ValueDefinitionAPI<T>;
 }
+
+interface CollectionDefinitionAPI<T>
+{
+    accepts: (validator: (value: T) => boolean) => CollectionDefinitionAPI<T>,
+    acceptsEntries: (validator: (value: CollectionEntryType<T>) => boolean) => CollectionDefinitionAPI<T>,
+}
+
+interface TypedCollectionDefinitionAPI<T> extends CollectionDefinitionAPI<T>
+{
+    withDefault: (defaultValue: T) => CollectionDefinitionAPI<T>,
+}
+
+//==============================================
+// Types
+//==============================================
 
 interface TemplateObject
 {
     [key: string]: TemplateObjectEntry;
 }
 type TemplateObjectEntry<T = any> = TemplateObject | ValueConfiguration<T>;
-
+type PrimitiveTemplate = typeof number | typeof string | typeof boolean;
 type CollectionEntryType<T> = T extends Array<infer E> ? E : T extends Record<string, infer R> ? [key: string, value: R] : never;
-interface CollectionDefinitionAPI<T>
-{
-    accepts: (validator: (value: T) => boolean) => CollectionDefinitionAPI<T>,
-    acceptsEntries: (validator: (value: CollectionEntryType<T>) => boolean) => CollectionDefinitionAPI<T>,
-}
-interface TypedCollectionDefinitionAPI<T> extends CollectionDefinitionAPI<T>
-{
-    withDefault: (defaultValue: T) => CollectionDefinitionAPI<T>,
-}
-
 type TypeOption = PrimitiveTemplate | TemplateObject;
 type ValueConfiguration<T> = ValueDefinitionAPI<T> | CollectionDefinitionAPI<T> | TypedCollectionDefinitionAPI<T>;
 
@@ -47,43 +61,158 @@ type Concrete<T extends TemplateObject> = {
     : never
 };
 
-class ValueTemplate<T>
+//==============================================
+// Value Template (base)
+//==============================================
+
+abstract class ValueTemplate<T> implements ParsingAPI<T>, ValidationAPI<T>, ValueDefinitionAPI<T>
 {
-    static withPermittedTypes(...permittedTypes: TypeOption[])
+    public default?: T;
+    protected isOptional = false;
+    protected customValidator?: (value: T) => boolean;
+
+    get required()
     {
-        const template = new ValueTemplate();
+        this.isOptional = false;
+        return this;
+    }
+
+    get optional()
+    {
+        this.isOptional = true;
+        return this;
+    }
+
+    accepts(validator: (value: T) => boolean): this
+    {
+        this.customValidator = validator;
+        return this;
+    }
+
+    withDefault(defaultValue: T): this
+    {
+        this.default = defaultValue;
+        return this;
+    }
+
+    abstract hydrate(value: T): T;
+    abstract fromString(value: string): T;
+
+    validate(value: T): boolean { return this.customValidator ? this.customValidator(value) : true; }
+}
+
+//==============================================
+// String Template
+//==============================================
+
+class StringTemplate extends ValueTemplate<string>
+{
+    fromString(value: string): string { return value; }
+    hydrate(value: string): string { return value; }
+    validate(value: unknown): value is string { return typeof value === "string" && super.validate(value); }
+}
+
+export function string(): ValueDefinitionAPI<string | undefined>;
+export function string(defaultValue: string): ValueDefinitionAPI<string>;
+export function string(defaultValue?: string)
+{
+    const template = new StringTemplate();
+    if (defaultValue !== undefined) template.default = defaultValue;
+    return template as ValueDefinitionAPI<string | undefined>;
+}
+
+//==============================================
+// Number Template
+//==============================================
+
+class NumberTemplate extends ValueTemplate<number>
+{
+    fromString(value: string): number
+    {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed))
+            throw new Error(`Cannot parse "${value}" as number`);
+        return parsed;
+    }
+    hydrate(value: number): number { return value; }
+    validate(value: unknown): value is number { return typeof value === "number" && Number.isFinite(value) && super.validate(value); }
+}
+
+export function number(): ValueDefinitionAPI<number | undefined>;
+export function number(defaultValue: number): ValueDefinitionAPI<number>;
+export function number(defaultValue?: number)
+{
+    const template = new NumberTemplate();
+    if (defaultValue !== undefined) template.default = defaultValue;
+    return template as ValueDefinitionAPI<number | undefined>;
+}
+
+//==============================================
+// Boolean Template
+//==============================================
+
+class BooleanTemplate extends ValueTemplate<boolean>
+{
+    fromString(value: string): boolean
+    {
+        const lowered = value.trim().toLowerCase();
+        if (lowered === "true" || lowered === "1") return true;
+        if (lowered === "false" || lowered === "0") return false;
+        throw new Error(`Cannot parse "${value}" as boolean`);
+    }
+    hydrate(value: boolean): boolean { return value; }
+    validate(value: unknown): value is boolean { return typeof value === "boolean" && super.validate(value); }
+}
+
+export function boolean(): ValueDefinitionAPI<boolean | undefined>;
+export function boolean(defaultValue: boolean): ValueDefinitionAPI<boolean>;
+export function boolean(defaultValue?: boolean)
+{
+    const template = new BooleanTemplate();
+    if (defaultValue !== undefined) template.default = defaultValue;
+    return template as ValueDefinitionAPI<boolean | undefined>;
+}
+
+
+//==============================================
+// Variadic Template
+//==============================================
+
+class VariadicTemplate<T> extends ValueTemplate<T>
+{
+    public permittedTypes: any[] = [];
+
+    constructor(...permittedTypes: TypeOption[])
+    {
+        super();
         for (const permittedType of permittedTypes)
         {
-            if (ValueTemplate.PrimitiveSet.has(permittedType as PrimitiveTemplate))
-                template.permittedTypes.push(permittedType as PrimitiveTemplate);
+            if (permittedType === string)
+                this.permittedTypes.push(new StringTemplate());
+            else if (permittedType === number)
+                this.permittedTypes.push(new NumberTemplate());
+            else if (permittedType === boolean)
+                this.permittedTypes.push(new BooleanTemplate());
             else if (permittedType instanceof Object)
-                template.permittedTypes.push(ObjectTemplate.fromTemplateObject(permittedType as TemplateObject));
+                this.permittedTypes.push(ObjectTemplate.fromTemplateObject(permittedType as TemplateObject));
             else
                 throw new Error("Type constraint not recognized");
         }
-        return template;
     }
 
-    private static PrimitiveSet = new Set([boolean, number, string]);
-
-    public default?: T;
-    private permittedTypes: any[] = [];
-
-    protected constructor() { }
-
-    parseString(valueString: string): [value: T, type: any]
+    fromString(valueString: string): T
     {
         for (const permittedType of this.permittedTypes)
             try
             {
                 const value = permittedType.fromString(valueString);
-                return [value, permittedType];
+                return value;
             }
             catch (e) { continue; }
         throw new Error("Could not match input to any possible type");
     }
 
-    hydrate(valueObject: any)
+    hydrate(valueObject: any): T
     {
         if (typeof valueObject === "object") 
         {
@@ -91,8 +220,7 @@ class ValueTemplate<T>
             for (const template of nonPrimitiveTemplates)
                 try
                 {
-                    const value = template.hydrate(valueObject);
-                    return [value, template];
+                    return template.hydrate(valueObject);
                 }
                 catch (e) { continue; }
         }
@@ -105,87 +233,12 @@ class ValueTemplate<T>
         if (!type.validate(value))
             throw new Error("Could not validate value");
     }
-
-    accepts(validator: (value: T) => boolean): this
-    {
-        this.validateValue = validator;
-        return this;
-    }
-
-    withDefault(defaultValue: T): ValueDefinitionAPI<T>
-    {
-        this.default = defaultValue;
-        return this as unknown as ValueDefinitionAPI<T>;
-    }
 }
 
 export function valueOf<T extends TypeOption[]>(...types: T): ValueDefinitionAPI<Resolve<T[number]>>
 {
-    return ValueTemplate.withPermittedTypes(...types);
+    return new VariadicTemplate(...types);
 }
-
-//==============================================
-// String
-//==============================================
-
-export function string(): ValueDefinitionAPI<string | undefined>;
-export function string(defaultValue: string): ValueDefinitionAPI<string>;
-export function string(defaultValue?: string)
-{
-    const template = ValueTemplate.withPermittedTypes(string);
-    if (defaultValue !== undefined) template.default = defaultValue;
-    return template as ValueDefinitionAPI<string | undefined>;
-}
-
-string.fromString = (value: string) => value;
-string.hydrate = (value: string) => value;
-string.validate = (value: unknown): value is string => typeof value === "string";
-
-//==============================================
-// Number
-//==============================================
-
-export function number(): ValueDefinitionAPI<number | undefined>;
-export function number(defaultValue: number): ValueDefinitionAPI<number>;
-export function number(defaultValue?: number)
-{
-    const template = ValueTemplate.withPermittedTypes(number);
-    if (defaultValue !== undefined) template.default = defaultValue;
-    return template as ValueDefinitionAPI<number | undefined>;
-}
-
-number.fromString = (value: string) => 
-{
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed))
-        throw new Error(`Cannot parse "${value}" as number`);
-    return parsed;
-};
-number.hydrate = (value: number) => value;
-number.validate = (value: unknown) => typeof value === "number" && Number.isFinite(value);
-
-//==============================================
-// Boolean
-//==============================================
-
-export function boolean(): ValueDefinitionAPI<boolean | undefined>;
-export function boolean(defaultValue: boolean): ValueDefinitionAPI<boolean>;
-export function boolean(defaultValue?: boolean)
-{
-    const template = ValueTemplate.withPermittedTypes(boolean);
-    if (defaultValue !== undefined) template.default = defaultValue;
-    return template as ValueDefinitionAPI<boolean | undefined>;
-}
-
-boolean.fromString = (value: string) =>
-{
-    const lowered = value.trim().toLowerCase();
-    if (lowered === "true" || lowered === "1") return true;
-    if (lowered === "false" || lowered === "0") return false;
-    throw new Error(`Cannot parse "${value}" as boolean`);
-};
-boolean.hydrate = (value: boolean) => value;
-boolean.validate = (value: unknown) => typeof value === "boolean";
 
 //==============================================
 // Object Template (base)
@@ -215,17 +268,18 @@ class ObjectTemplate<T> extends ValueTemplate<T>
         return this.hydrate(rawValues);
     }
 
-    hydrate(value: any)
+    hydrate(value: any): T
     {
         for (const [key, configuration] of Object.entries(this.template))
-            if (value[key]) value[key] = configuration.hydrate(value[key]);
+            if (value[key] && configuration instanceof ValueTemplate)
+                value[key] = configuration.hydrate(value[key]);
 
         return value;
     }
 
-    validate(value: T)
+    validate(value: T): boolean
     {
-
+        return true;
     }
 }
 
@@ -261,12 +315,6 @@ abstract class CollectionTemplate<T> extends ValueTemplate<T>
     {
         super();
         this.entryShape = entryShape;
-    }
-
-    withDefault(defaultValue: T): CollectionDefinitionAPI<T>
-    {
-        this.default = defaultValue;
-        return this as unknown as CollectionDefinitionAPI<T>;
     }
 
     protected entryValidator?: (value: any) => boolean;
@@ -315,6 +363,8 @@ class ListTemplate<V> extends CollectionTemplate<Record<string, V>>
             throw new Error(`Cannot parse "${value}" as list`);
         return parsed as Record<string, V>;
     }
+
+    hydrate(value: Record<string, V>): Record<string, V> { return value; }
 
     validateType(value: unknown): boolean
     {
@@ -368,6 +418,8 @@ class ArrayTemplate<V> extends CollectionTemplate<V[]>
         return parsed as V[];
     }
 
+    hydrate(value: V[]): V[] { return value; }
+
     validateType(value: unknown): boolean
     {
         return Array.isArray(value);
@@ -397,7 +449,7 @@ const SubTemplate = {
 const SampleTemplate = {
     number: number(123).accepts(number => number < 256),
     bool: boolean(),
-    string: string(),
+    string: string().required,
     either: valueOf(number, string),
     array: arrayOf(number, string).withDefault([]).accepts(array => array.length < 100).acceptsEntries(entry => true),
     list: listOf(SubTemplate).withDefault({ sample: { sampleParameter: 123, sampleValue: "text" } }).acceptsEntries(([key, value]) => true),
