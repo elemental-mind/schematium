@@ -73,25 +73,25 @@ abstract class ValueTemplate<T> implements ParsingAPI<T>, ValidationAPI<T>, Valu
     get required()
     {
         this.isOptional = false;
-        return this;
+        return this as ValueDefinitionAPI<T>;
     }
 
     get optional()
     {
         this.isOptional = true;
-        return this;
+        return this as ValueDefinitionAPI<T>;
     }
 
-    accepts(validator: (value: T) => boolean): this
+    accepts(validator: (value: T) => boolean)
     {
         this.customValidator = validator;
-        return this;
+        return this as ValueDefinitionAPI<T>;
     }
 
-    withDefault(defaultValue: T): this
+    withDefault(defaultValue: T)
     {
         this.default = defaultValue;
-        return this;
+        return this as ValueDefinitionAPI<T>;
     }
 
     abstract fromString(value: string): T;
