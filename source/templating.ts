@@ -12,22 +12,26 @@ interface ValidationAPI<T>
     validate: (value: T) => boolean;
 }
 
-interface ValueDefinitionAPI<T>
+// Internal indirection — never used by call sites, just breaks type circularity
+type ValueDefinitionSelf<T> = ValueDefinitionAPI<T, ValueDefinitionSelf<T>>;
+type CollectionDefinitionSelf<T> = CollectionDefinitionAPI<T, CollectionDefinitionSelf<T>>;
+type TypedCollectionDefinitionSelf<T> = TypedCollectionDefinitionAPI<T, TypedCollectionDefinitionSelf<T>>;
+
+interface ValueDefinitionAPI<T, TSelf extends ValueDefinitionAPI<T, TSelf> = ValueDefinitionSelf<T>>
 {
-    required: ValueDefinitionAPI<T>,
-    optional: ValueDefinitionAPI<T>,
-    accepts: (validator: (value: T) => boolean) => ValueDefinitionAPI<T>;
+    required: TSelf;
+    optional: TSelf;
+    accepts: (validator: (value: T) => boolean) => TSelf;
 }
 
-interface CollectionDefinitionAPI<T>
+interface CollectionDefinitionAPI<T, TSelf extends CollectionDefinitionAPI<T, TSelf> = CollectionDefinitionSelf<T>> extends ValueDefinitionAPI<T, TSelf>
 {
-    accepts: (validator: (value: T) => boolean) => CollectionDefinitionAPI<T>,
-    acceptsEntries: (validator: (value: CollectionEntryType<T>) => boolean) => CollectionDefinitionAPI<T>,
+    acceptsEntries: (validator: (value: CollectionEntryType<T>) => boolean) => TSelf;
 }
 
-interface TypedCollectionDefinitionAPI<T> extends CollectionDefinitionAPI<T>
+interface TypedCollectionDefinitionAPI<T, TSelf extends TypedCollectionDefinitionAPI<T, TSelf> = TypedCollectionDefinitionSelf<T>> extends CollectionDefinitionAPI<T, TSelf>
 {
-    withDefault: (defaultValue: T) => CollectionDefinitionAPI<T>,
+    withDefault: (defaultValue: T) => TSelf;
 }
 
 //==============================================
@@ -67,31 +71,31 @@ type Concrete<T extends TemplateObject> = {
 abstract class ValueTemplate<T> implements ParsingAPI<T>, ValidationAPI<T>, ValueDefinitionAPI<T>
 {
     public default?: T;
-    protected isOptional = false;
+    isOptional = false;
     protected customValidator?: (value: T) => boolean;
 
     get required()
     {
         this.isOptional = false;
-        return this as ValueDefinitionAPI<T>;
+        return this;
     }
 
     get optional()
     {
         this.isOptional = true;
-        return this as ValueDefinitionAPI<T>;
+        return this;
     }
 
     accepts(validator: (value: T) => boolean)
     {
         this.customValidator = validator;
-        return this as ValueDefinitionAPI<T>;
+        return this;
     }
 
     withDefault(defaultValue: T)
     {
         this.default = defaultValue;
-        return this as ValueDefinitionAPI<T>;
+        return this;
     }
 
     abstract fromString(value: string): T;
@@ -114,8 +118,11 @@ export function string(defaultValue: string): ValueDefinitionAPI<string>;
 export function string(defaultValue?: string)
 {
     const template = new StringTemplate();
-    if (defaultValue !== undefined) template.default = defaultValue;
-    return template as ValueDefinitionAPI<string | undefined>;
+    if (defaultValue !== undefined)
+        template.default = defaultValue;
+    else
+        template.isOptional = true;
+    return template;
 }
 
 //==============================================
@@ -139,8 +146,11 @@ export function number(defaultValue: number): ValueDefinitionAPI<number>;
 export function number(defaultValue?: number)
 {
     const template = new NumberTemplate();
-    if (defaultValue !== undefined) template.default = defaultValue;
-    return template as ValueDefinitionAPI<number | undefined>;
+    if (defaultValue !== undefined)
+        template.default = defaultValue;
+    else
+        template.isOptional = true;
+    return template;
 }
 
 //==============================================
@@ -164,8 +174,11 @@ export function boolean(defaultValue: boolean): ValueDefinitionAPI<boolean>;
 export function boolean(defaultValue?: boolean)
 {
     const template = new BooleanTemplate();
-    if (defaultValue !== undefined) template.default = defaultValue;
-    return template as ValueDefinitionAPI<boolean | undefined>;
+    if (defaultValue !== undefined)
+        template.default = defaultValue;
+    else
+        template.isOptional = true;
+    return template;
 }
 
 
@@ -256,13 +269,13 @@ class ObjectTemplate<T> extends ValueTemplate<T>
 // Collection Template (base)
 //==============================================
 
-abstract class CollectionTemplate<T> extends ValueTemplate<T>
+abstract class CollectionTemplate<T> extends ValueTemplate<T> implements CollectionDefinitionAPI<T>
 {
     /**
      * Inspects a flat collection of runtime values and reports which of the
      * supported primitive `TypeOption`s they belong to (`number`, `string`,
      * `bool`). Non-primitive values are ignored.
-     */
+    */
     static inferEntryTypes(values: readonly unknown[]): TypeOption | TypeOption[]
     {
         const found = new Set<TypeOption>();
@@ -286,6 +299,8 @@ abstract class CollectionTemplate<T> extends ValueTemplate<T>
         this.entryShape = entryShape;
     }
 
+    abstract acceptsEntries(validator: (value: CollectionEntryType<T>) => boolean): this;
+
     protected entryValidator?: (value: any) => boolean;
 }
 
@@ -301,9 +316,7 @@ class ListTemplate<V> extends CollectionTemplate<Record<string, V>>
      * stored verbatim on the template so `.withDefault(...)` doesn't need to
      * be chained separately.
      */
-    static fromDefault<T extends Record<string, boolean> | Record<string, number> | Record<string, string>>(
-        defaultValue: T
-    ): ListTemplate<any>
+    static fromDefault<T extends Record<string, boolean> | Record<string, number> | Record<string, string>>(defaultValue: T)
     {
         const elementType = ListTemplate.inferEntryTypes(Object.values(defaultValue));
         const template = new ListTemplate<typeof elementType>(elementType);
@@ -316,13 +329,13 @@ class ListTemplate<V> extends CollectionTemplate<Record<string, V>>
      * concrete `TypeOption`s. The provided types are stored verbatim as the
      * template's `entryShape` and used to validate / coerce parsed entries.
      */
-    static fromTypes<T extends TypeOption[]>(...types: T): ListTemplate<Resolve<T[number]>>
+    static fromTypes<T extends TypeOption[]>(...types: T)
     {
         const entryShape = types.length === 1 ? types[0] : types;
         return new ListTemplate<Resolve<T[number]>>(entryShape);
     }
 
-    fromString(value: string): Record<string, V>
+    fromString(value: string)
     {
         // TODO first draft: this is a JSON-only parser. A follow-up should
         // also accept `key=value,key=value` style input and convert each
@@ -333,17 +346,17 @@ class ListTemplate<V> extends CollectionTemplate<Record<string, V>>
         return parsed as Record<string, V>;
     }
 
-    validateType(value: unknown): boolean
+    validateType(value: unknown)
     {
         return typeof value === "object" && value !== null && !Array.isArray(value);
     }
 
-    acceptsEntries(validator: (value: [string, V]) => boolean): CollectionDefinitionAPI<Record<string, V>>
+    acceptsEntries(validator: (value: [string, V]) => boolean)
     {
         // TODO first draft: per-entry validator is captured but not yet wired
         // into `fromString` / resolve flow.
         this.entryValidator = validator as (value: any) => boolean;
-        return this as unknown as CollectionDefinitionAPI<Record<string, V>>;
+        return this;
     }
 }
 
@@ -390,12 +403,12 @@ class ArrayTemplate<V> extends CollectionTemplate<V[]>
         return Array.isArray(value);
     }
 
-    acceptsEntries(validator: (value: V) => boolean): CollectionDefinitionAPI<V[]>
+    acceptsEntries(validator: (value: V) => boolean)
     {
         // TODO first draft: per-entry validator is captured but not yet wired
         // into `fromString` / resolve flow.
         this.entryValidator = validator as (value: any) => boolean;
-        return this as unknown as CollectionDefinitionAPI<V[]>;
+        return this;
     }
 }
 
