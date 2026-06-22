@@ -428,6 +428,15 @@ class ListTemplate<T> extends CollectionTemplate<Record<string, T>>
             throw new Error(`Cannot parse "${value}" as list`);
         return parsed as Record<string, T>;
     }
+
+    validateType(value: Record<string, T>): boolean
+    {
+        if (typeof value !== "object" || value === null || Array.isArray(value))
+            return false;
+        for (const entry of Object.values(value))
+            if (!this.validateEntry(entry)) return false;
+        return true;
+    }
 }
 
 export const list = ListTemplate.fromExample as <T extends Record<string, boolean> | Record<string, number> | Record<string, string>>(defaultValue: T) => CollectionDefinitionAPI<T>;
@@ -460,6 +469,15 @@ class ArrayTemplate<T> extends CollectionTemplate<T[]>
         if (!Array.isArray(parsed))
             throw new Error(`Cannot parse "${value}" as array`);
         return parsed as T[];
+    }
+
+    validateType(value: T[]): boolean
+    {
+        if (!Array.isArray(value))
+            return false;
+        for (const entry of value)
+            if (!this.validateEntry(entry)) return false;
+        return true;
     }
 }
 
