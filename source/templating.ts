@@ -16,12 +16,12 @@ interface ValueDefinitionAPI<T, TSelf extends ValueDefinitionAPI<T, TSelf> = Val
 {
     required: TSelf;
     optional: TSelf;
-    accepts: (validator: (value: T) => boolean) => TSelf;
+    accepts(validator: (value: T) => boolean): TSelf;
 }
 
 interface CollectionDefinitionAPI<T, TSelf extends CollectionDefinitionAPI<T, TSelf> = CollectionDefinitionSelf<T>> extends ValueDefinitionAPI<T, TSelf>
 {
-    acceptsEntries: (validator: (value: CollectionEntryType<T>) => boolean) => TSelf;
+    acceptsEntries(validator: EntryValidationClosure<T>): TSelf;
 }
 
 interface TypedCollectionDefinitionAPI<T, TSelf extends TypedCollectionDefinitionAPI<T, TSelf> = TypedCollectionDefinitionSelf<T>> extends CollectionDefinitionAPI<T, TSelf>
@@ -33,16 +33,19 @@ interface TypedCollectionDefinitionAPI<T, TSelf extends TypedCollectionDefinitio
 // Types
 //==============================================
 
-interface TemplateObject
+export interface TemplateObject
 {
     [key: string]: TemplateObjectEntry;
 }
 type TemplateObjectEntry<T = any> = TemplateObject | ValueConfiguration<T>;
 type PrimitiveTemplate = typeof number | typeof string | typeof boolean;
 type PrimitiveString = "string" | "boolean" | "number";
-type CollectionEntryType<T> = T extends Array<infer E> ? E : T extends Record<string, infer R> ? [key: string, value: R] : never;
 type TypeOption = PrimitiveTemplate | TemplateObject | ValueTemplate<any>;
 type ValueConfiguration<T> = ValueDefinitionAPI<T> | CollectionDefinitionAPI<T> | TypedCollectionDefinitionAPI<T>;
+type EntryValidationClosure<T> =
+    T extends Array<infer E> ? (value: E) => boolean :
+    T extends Record<string, infer E> ? (key: string, value: E) => boolean :
+    never;
 
 type Resolve<T extends TypeOption> =
     T extends typeof number ? number :
@@ -81,7 +84,7 @@ abstract class ValueTemplate<T> implements ParsingAPI<T>, ValueDefinitionAPI<T>
             case "boolean": return new BooleanTemplate();
             case "object":
                 if (Array.isArray(exampleValue))
-                    return ArrayTemplate.fromExample(exampleValue as boolean[] | number[] | string[]);
+                    return ArrayTemplate.fromExample<any>(exampleValue);
                 else
                     return ListTemplate.fromExample(exampleValue as Record<string, boolean> | Record<string, number> | Record<string, string>);
         }
@@ -115,8 +118,9 @@ abstract class ValueTemplate<T> implements ParsingAPI<T>, ValueDefinitionAPI<T>
                         identifiedNormalizedTypes.add(ArrayTemplate.fromExample(exampleValue));
                     else
                         identifiedNormalizedTypes.add(ListTemplate.fromExample(exampleValue as Record<string, boolean> | Record<string, number> | Record<string, string>));
+                default:
+                    throw new Error("Cannot resolve template from example value");
             }
-            throw new Error("Cannot resolve template from example value");
         }
 
         const templateValues = [...identifiedNormalizedTypes].map(templateOrTypeString => ValueTemplate.fromTypeInput(templateOrTypeString));
@@ -383,21 +387,7 @@ abstract class CollectionTemplate<T> extends ValueTemplate<T> implements TypedCo
         this.entryTemplate = entryTemplate;
     }
 
-    protected validateEntry(entry: any): boolean
-    {
-        return this.entryTemplate.validate(entry) && this.entryGuard(entry);
-    }
-
-    protected entryGuard(value: any)
-    {
-        return true;
-    }
-
-    acceptsEntries(validator: (value: any) => boolean)
-    {
-        this.entryGuard = validator;
-        return this;
-    }
+    abstract acceptsEntries(validator: EntryValidationClosure<T>): this;
 }
 
 //==============================================
@@ -408,7 +398,7 @@ class ListTemplate<T> extends CollectionTemplate<Record<string, T>>
 {
     static fromExample(exampleList: Record<string, any>)
     {
-        const elementType = ValueTemplate.fromExamples(Object.values(exampleList));
+        const elementType = ValueTemplate.fromExamples(...Object.values(exampleList));
         return new ListTemplate<any>(elementType);
     }
 
@@ -416,6 +406,17 @@ class ListTemplate<T> extends CollectionTemplate<Record<string, T>>
     {
         const elementType = ValueTemplate.fromTypeInputs(...types);
         return new ListTemplate<Resolve<T[number]>>(elementType);
+    }
+
+    protected entryGuard(key: string, value: any)
+    {
+        return true;
+    }
+
+    acceptsEntries(validator: (key: string, value: T) => boolean)
+    {
+        this.entryGuard = validator;
+        return this;
     }
 
     parseString(value: string)
@@ -433,9 +434,14 @@ class ListTemplate<T> extends CollectionTemplate<Record<string, T>>
     {
         if (typeof value !== "object" || value === null || Array.isArray(value))
             return false;
-        for (const entry of Object.values(value))
-            if (!this.validateEntry(entry)) return false;
+        for (const [key, entry] of Object.entries(value))
+            if (!this.validateEntry(key, entry)) return false;
         return true;
+    }
+
+    protected validateEntry(key: string, entry: any): boolean
+    {
+        return this.entryTemplate.validate(entry) && this.entryGuard(key, entry);
     }
 }
 
@@ -448,9 +454,9 @@ export const listOf = ListTemplate.fromTypes as <T extends TypeOption[]>(...type
 
 class ArrayTemplate<T> extends CollectionTemplate<T[]>
 {
-    static fromExample<T extends unknown>(exampleArray: T[]): ArrayTemplate<T>
+    static fromExample<T>(exampleArray: T[]): ArrayTemplate<T>
     {
-        const elementType = ValueTemplate.fromExamples(Object.values(exampleArray));
+        const elementType = ValueTemplate.fromExamples(...Object.values(exampleArray));
         return new ArrayTemplate<any>(elementType);
     }
 
@@ -458,6 +464,17 @@ class ArrayTemplate<T> extends CollectionTemplate<T[]>
     {
         const elementType = ValueTemplate.fromTypeInputs(...types);
         return new ArrayTemplate<Resolve<T[number]>>(elementType);
+    }
+
+    protected entryGuard(value: any)
+    {
+        return true;
+    }
+
+    acceptsEntries(validator: (value: T) => boolean)
+    {
+        this.entryGuard = validator;
+        return this;
     }
 
     parseString(value: string): T[]
@@ -479,29 +496,15 @@ class ArrayTemplate<T> extends CollectionTemplate<T[]>
             if (!this.validateEntry(entry)) return false;
         return true;
     }
+
+    protected validateEntry(entry: any): boolean
+    {
+        return this.entryTemplate.validate(entry) && this.entryGuard(entry);
+    }
 }
 
 export const array = ArrayTemplate.fromExample as <T extends boolean[] | number[] | string[]>(defaultValue: T) => CollectionDefinitionAPI<T>;
 export const arrayOf = ArrayTemplate.fromTypes as <T extends TypeOption[]>(...types: T) => TypedCollectionDefinitionAPI<Resolve<T[number]>[]>;
 
-//==============================================
-// Example Usage
-//==============================================
 
-const SubTemplate = {
-    sampleValue: string(),
-    sampleParameter: number(123),
-} satisfies TemplateObject;
-
-const SampleTemplate = {
-    number: number(123).accepts(number => number < 256),
-    bool: boolean(),
-    string: string().required,
-    either: valueOf(number, string),
-    array: arrayOf(number, string).withDefault([]).accepts(array => array.length < 100).acceptsEntries(entry => true),
-    list: listOf(SubTemplate).withDefault({ sample: { sampleParameter: 123, sampleValue: "text" } }).acceptsEntries(([key, value]) => true),
-    deep: {
-        bar: array(["bla", "bla"])
-    }
-} satisfies TemplateObject;
 
