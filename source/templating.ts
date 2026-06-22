@@ -329,19 +329,43 @@ class ObjectTemplate<T> extends ValueTemplate<T>
         return ObjectTemplate.TemplateCache.get(templateObject) ?? new ObjectTemplate(templateObject);
     }
 
-    public template: Record<string, ValueConfiguration<any> | ObjectTemplate<any>> = {};
+    public strict: boolean = true;
+    public template: Map<string, ValueTemplate<any>> = new Map();
 
     private constructor(templateObject: TemplateObject)
     {
         super();
         ObjectTemplate.TemplateCache.set(templateObject, this);
         for (const [key, value] of Object.entries(templateObject))
-            this.template[key] = value instanceof ValueTemplate ? value : ObjectTemplate.fromTemplateObject(value as TemplateObject);
+            this.template.set(key, value instanceof ValueTemplate ? value : ObjectTemplate.fromTemplateObject(value as TemplateObject));
     }
 
     parseString(value: string): T
     {
         return JSON.parse(value);
+    }
+
+    validateType(value: T): boolean
+    {
+        if (typeof value !== "object" || value === null)
+            return false;
+
+        const input = value as Record<string, unknown>;
+
+        for (const [key, template] of this.template.entries())
+        {
+            const value = input[key];
+            if (value === undefined && !template.isOptional)
+                return false;
+            else if (value !== undefined && !template.validate(value))
+                return false;
+        }
+
+        if (this.strict)
+            for (const key of Object.keys(input))
+                if (!this.template.has(key)) return false;
+
+        return true;
     }
 }
 
