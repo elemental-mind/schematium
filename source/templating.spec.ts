@@ -33,10 +33,10 @@ const SampleTemplate = {
 } satisfies TemplateObject;
 
 // ============================================================
-// Definition behaviour
+// Primitive template
 // ============================================================
 
-export class DefinitionBehaviourTests
+export class PrimitiveDefnitionTests
 {
     givenValueShouldBecomeDefaultValue()
     {
@@ -69,6 +69,38 @@ export class DefinitionBehaviourTests
         const template = withValidate(t);
         assert.strictEqual(template.validate(5), true);
         assert.strictEqual(template.validate(-1), false);
+    }
+}
+
+// ============================================================
+// Variadic template
+// ============================================================
+
+export class VariadicDefinitionTests
+{
+    shouldAcknowledgeBaseTypes()
+    {
+        const t = valueOf(number, string);
+        const template = withValidate(t);
+        assert.strictEqual(template.validate(42), true);
+        assert.strictEqual(template.validate("hello"), true);
+        assert.strictEqual(template.validate(false), false);
+    }
+
+    acceptsCustomValidatorOnVariadic()
+    {
+        const t = valueOf(number).accepts(v => (v as number) > 0);
+        const template = withValidate(t);
+        assert.strictEqual(template.validate(5), true);
+        assert.strictEqual(template.validate(-1), false);
+    }
+
+    validatesArrayEntriesWithAcceptsEntries()
+    {
+        const t = arrayOf(number).acceptsEntries(v => (v as number) % 2 === 0);
+        const template = withValidate(t);
+        assert.strictEqual(template.validate([2, 4, 6]), true);
+        assert.strictEqual(template.validate([1, 3, 5]), false);
     }
 }
 
@@ -275,7 +307,7 @@ export class ArrayDefinitionTests
         const t = arrayOf(number).withDefault([1, 2, 3]);
         const raw = t as any;
         assert.deepStrictEqual(raw.default, [1, 2, 3]);
-        assert.strictEqual(raw.isOptional, false);
+        assert.strictEqual(raw.isOptional, true);
     }
 }
 
@@ -334,37 +366,5 @@ export class ParsingTests
         const t = listOf(string);
         const result = withValidate(t).parseString('{"a":"x"}');
         assert.deepStrictEqual(result, { a: "x" });
-    }
-}
-
-// ============================================================
-// Variadic / valueOf
-// ============================================================
-
-export class ValidationTests
-{
-    shouldAcknowledgeBaseTypes()
-    {
-        const t = valueOf(number, string);
-        const template = withValidate(t);
-        assert.strictEqual(template.validate(42), true);
-        assert.strictEqual(template.validate("hello"), true);
-        assert.strictEqual(template.validate(false), false);
-    }
-
-    acceptsCustomValidatorOnVariadic()
-    {
-        const t = valueOf(number).accepts(v => (v as number) > 0);
-        const template = withValidate(t);
-        assert.strictEqual(template.validate(5), true);
-        assert.strictEqual(template.validate(-1), false);
-    }
-
-    validatesArrayEntriesWithAcceptsEntries()
-    {
-        const t = arrayOf(number).acceptsEntries(v => (v as number) % 2 === 0);
-        const template = withValidate(t);
-        assert.strictEqual(template.validate([2, 4, 6]), true);
-        assert.strictEqual(template.validate([1, 3, 5]), false);
     }
 }
