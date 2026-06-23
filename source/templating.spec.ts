@@ -42,13 +42,13 @@ export class DefinitionBehaviourTests
     {
         const t = string("hello");
         assert.strictEqual((t as any).default, "hello");
-        assert.strictEqual((t as any).isOptional, false);
+        assert.strictEqual((t as any).isOptional, true);
     }
 
-    givenValueShouldMakeValueRequired()
+    defaultValueShouldMakeValueOptional()
     {
         const t = number(42);
-        assert.strictEqual((t as any).isOptional, false);
+        assert.strictEqual((t as any).isOptional, true);
     }
 
     optionalModifierMakesValueOptional()
