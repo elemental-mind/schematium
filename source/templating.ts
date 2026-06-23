@@ -171,6 +171,16 @@ abstract class ValueTemplate<T> implements ParsingAPI<T>, ValueDefinitionAPI<T>
     isOptional = false;
     protected customValidator?: (value: T) => boolean;
 
+    get parsingPriority()
+    {
+        if (this instanceof NumberTemplate) return 0;
+        if (this instanceof BooleanTemplate) return 1;
+        if (this instanceof CollectionTemplate) return 2;
+        if (this instanceof StringTemplate) return 4;
+
+        return 3;
+    }
+
     get required()
     {
         this.isOptional = false;
@@ -307,10 +317,17 @@ class VariadicTemplate<T> extends ValueTemplate<T>
     {
         super();
         this.permittedTypes = permittedTypes;
+        this.sortForParsingPriority();
+    }
+
+    private sortForParsingPriority()
+    {
+        this.permittedTypes.sort((a, b) => a.parsingPriority - b.parsingPriority);
     }
 
     parseString(valueString: string): T
     {
+        // permittedTypes is already sorted by priority (number → boolean → objects → string)
         for (const permittedType of this.permittedTypes)
             try
             {
