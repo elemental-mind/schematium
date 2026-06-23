@@ -91,7 +91,7 @@ abstract class ValueTemplate<T> implements ParsingAPI<T>, ValueDefinitionAPI<T>
                 if (Array.isArray(exampleValue))
                     return ArrayTemplate.fromExample<any>(exampleValue);
                 else
-                    return ListTemplate.fromExample(exampleValue as Record<string, boolean> | Record<string, number> | Record<string, string>);
+                    return ListTemplate.fromExample(exampleValue);
         }
         throw new Error("Cannot resolve template from example value");
     }
@@ -122,7 +122,7 @@ abstract class ValueTemplate<T> implements ParsingAPI<T>, ValueDefinitionAPI<T>
                     if (Array.isArray(exampleValue))
                         identifiedNormalizedTypes.add(ArrayTemplate.fromExample(exampleValue));
                     else
-                        identifiedNormalizedTypes.add(ListTemplate.fromExample(exampleValue as Record<string, boolean> | Record<string, number> | Record<string, string>));
+                        identifiedNormalizedTypes.add(ListTemplate.fromExample(exampleValue));
                 default:
                     throw new Error("Cannot resolve template from example value");
             }
@@ -206,6 +206,11 @@ abstract class ValueTemplate<T> implements ParsingAPI<T>, ValueDefinitionAPI<T>
     }
 
     abstract validateType(value: T): boolean;
+}
+
+export function schema(inputSchema: TemplateObject)
+{
+    return ObjectTemplate.fromTemplateObject(inputSchema);
 }
 
 //==============================================
@@ -389,6 +394,11 @@ class ObjectTemplate<T> extends ValueTemplate<T>
 
         return true;
     }
+}
+
+export function object<T extends TemplateObject>(value: T): ValueDefinitionAPI<Resolve<T>>
+{
+    return ObjectTemplate.fromTemplateObject(value);
 }
 
 //==============================================
