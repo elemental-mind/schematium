@@ -168,18 +168,20 @@ export class ListDefinitionTests
 {
     stringSampleObjectsGetRecognizedAsStringValues()
     {
-        const t = listOf(string);
+        const t = list({ value: "text", anotherValue: "also text" });
         const template = withValidate(t);
         assert.strictEqual(template.validate({ a: "foo", b: "bar" }), true);
         assert.strictEqual(template.validate({ a: 1 } as any), false);
+        assert.strictEqual(template.validate({ a: true } as any), false);
     }
 
-    passedSubObjectsAreParsedAsLists()
+    passedSubExampleObjectsAreParsedAsLists()
     {
-        const t = listOf(string);
-        const asParsed = t as any;
-        const raw = asParsed.parseString('{"a":"x","b":"y"}');
-        assert.deepStrictEqual(raw, { a: "x", b: "y" });
+        const t = list({ value: { value: "text", anotherValue: "also text" } });
+        const template = withValidate(t);
+        assert.strictEqual(template.validate({value: { value: "foo", anotherValue: "bar" }}), true);
+        assert.strictEqual(template.validate({value: { value: "foo", newName: "bar" }}), true);
+        assert.strictEqual(template.validate({value: { value: 123 }}), false);
     }
 
     rejectsNonObjectInput()
@@ -197,6 +199,43 @@ export class ListDefinitionTests
         const template = withValidate(t);
         assert.strictEqual(template.validate({ a: 1, b: 2 }), true);
         assert.strictEqual(template.validate({ a: -1 }), false);
+    }
+
+    validatesStringOrNumberList()
+    {
+        const t = listOf(string, number);
+        const template = withValidate(t);
+        assert.strictEqual(template.validate({ a: "text", b: 42 }), true);
+        assert.strictEqual(template.validate({ a: true }), false);
+        assert.strictEqual(template.validate({ a: {} }), false);
+    }
+
+    emptyListIsValid()
+    {
+        const t = listOf(string, number);
+        const template = withValidate(t);
+        assert.strictEqual(template.validate({}), true);
+    }
+
+    exampleListWithStringOrNumber()
+    {
+        const t = list({ a: "hello", b: 42 });
+        const template = withValidate(t);
+        assert.strictEqual(template.validate({ a: "world", b: 99 }), true);
+        assert.strictEqual(template.validate({ a: "only" }), true);
+        assert.strictEqual(template.validate({ a: true }), false);
+        assert.strictEqual(template.validate({ a: 1, b: "yep" }), true);
+        assert.strictEqual(template.validate({}), true);
+    }
+
+    exampleListAllowsAnyKeyName()
+    {
+        const t = list({ value: "text" });
+        const template = withValidate(t);
+        assert.strictEqual(template.validate({ value: "foo" }), true);
+        assert.strictEqual(template.validate({ anyKey: "bar" }), true);
+        assert.strictEqual(template.validate({ "": "empty" }), true);
+        assert.strictEqual(template.validate({ key: "x", anotherKey: "y" }), true);
     }
 }
 
