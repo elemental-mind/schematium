@@ -8,14 +8,19 @@ interface ParsingAPI<T>
 }
 
 // Internal indirection — never used by call sites, just breaks type circularity
+type OptionalityDefinitionSelf<T> = OptionalityDefinitionAPI<T, OptionalityDefinitionSelf<T>>;
 type ValueDefinitionSelf<T> = ValueDefinitionAPI<T, ValueDefinitionSelf<T>>;
 type CollectionDefinitionSelf<T> = CollectionDefinitionAPI<T, CollectionDefinitionSelf<T>>;
 type TypedCollectionDefinitionSelf<T> = TypedCollectionDefinitionAPI<T, TypedCollectionDefinitionSelf<T>>;
 
-interface ValueDefinitionAPI<T, TSelf extends ValueDefinitionAPI<T, TSelf> = ValueDefinitionSelf<T>>
+interface OptionalityDefinitionAPI<T, TSelf extends OptionalityDefinitionAPI<T, TSelf> = OptionalityDefinitionSelf<T>>
 {
     required: TSelf;
     optional: TSelf;
+}
+
+interface ValueDefinitionAPI<T, TSelf extends ValueDefinitionAPI<T, TSelf> = ValueDefinitionSelf<T>> extends OptionalityDefinitionAPI<T, TSelf>
+{
     accepts(validator: (value: T) => boolean): TSelf;
 }
 
@@ -187,6 +192,7 @@ abstract class ValueTemplate<T> implements ParsingAPI<T>, ValueDefinitionAPI<T>
     withDefault(defaultValue: T)
     {
         this.default = defaultValue;
+        this.isOptional = true;
         return this;
     }
 
@@ -218,9 +224,10 @@ export function string(defaultValue?: string)
 {
     const template = new StringTemplate();
     if (defaultValue !== undefined)
+    {
         template.default = defaultValue;
-    else
         template.isOptional = true;
+    }
     return template;
 }
 
@@ -246,9 +253,10 @@ export function number(defaultValue?: number)
 {
     const template = new NumberTemplate();
     if (defaultValue !== undefined)
+    {
         template.default = defaultValue;
-    else
         template.isOptional = true;
+    }
     return template;
 }
 
@@ -274,9 +282,10 @@ export function boolean(defaultValue?: boolean)
 {
     const template = new BooleanTemplate();
     if (defaultValue !== undefined)
+    {
         template.default = defaultValue;
-    else
         template.isOptional = true;
+    }
     return template;
 }
 
@@ -320,6 +329,12 @@ export function valueOf<T extends TypeOption[]>(...types: T): ValueDefinitionAPI
     return ValueTemplate.fromTypeInputs(...types);
 }
 
+export function oneOf<T extends string | number>(...possibleValues: T[]): OptionalityDefinitionAPI<T>
+{
+    const valueSet = new Set(possibleValues);
+    return ValueTemplate.fromExamples(...possibleValues).accepts(value => valueSet.has(value));
+}
+
 //==============================================
 // Object Template (base)
 //==============================================
@@ -342,6 +357,9 @@ class ObjectTemplate<T> extends ValueTemplate<T>
         ObjectTemplate.TemplateCache.set(templateObject, this);
         for (const [key, value] of Object.entries(templateObject))
             this.template.set(key, value instanceof ValueTemplate ? value : ObjectTemplate.fromTemplateObject(value as TemplateObject));
+
+        if ([...this.template.values()].every(value => value.isOptional))
+            this.isOptional = true;
     }
 
     parseString(value: string): T
@@ -396,10 +414,10 @@ abstract class CollectionTemplate<T> extends ValueTemplate<T> implements TypedCo
 
 class ListTemplate<T> extends CollectionTemplate<Record<string, T>>
 {
-    static fromExample(exampleList: Record<string, any>)
+    static fromExample<T = any>(exampleList: Record<string, T>)
     {
         const elementType = ValueTemplate.fromExamples(...Object.values(exampleList));
-        return new ListTemplate<any>(elementType);
+        return new ListTemplate<T>(elementType);
     }
 
     static fromTypes<T extends TypeOption[]>(...types: T)
@@ -445,8 +463,17 @@ class ListTemplate<T> extends CollectionTemplate<Record<string, T>>
     }
 }
 
-export const list = ListTemplate.fromExample as <T extends Record<string, boolean> | Record<string, number> | Record<string, string>>(defaultValue: T) => CollectionDefinitionAPI<T>;
-export const listOf = ListTemplate.fromTypes as <T extends TypeOption[]>(...types: T) => TypedCollectionDefinitionAPI<Record<string, Resolve<T[number]>>>;
+export function list<T>(defaultValue: Record<string, T>): TypedCollectionDefinitionAPI<Record<string, T>>
+{
+    const template = ListTemplate.fromExample<T>(defaultValue);
+    template.withDefault(defaultValue);
+    return template;
+}
+
+export function listOf<T extends TypeOption[]>(...types: T): TypedCollectionDefinitionAPI<Record<string, Resolve<T[number]>>>
+{
+    return ListTemplate.fromTypes(...types) as unknown as TypedCollectionDefinitionAPI<Record<string, Resolve<T[number]>>>;
+}
 
 //==============================================
 // Array  (V[])
@@ -503,8 +530,17 @@ class ArrayTemplate<T> extends CollectionTemplate<T[]>
     }
 }
 
-export const array = ArrayTemplate.fromExample as <T extends boolean[] | number[] | string[]>(defaultValue: T) => CollectionDefinitionAPI<T>;
-export const arrayOf = ArrayTemplate.fromTypes as <T extends TypeOption[]>(...types: T) => TypedCollectionDefinitionAPI<Resolve<T[number]>[]>;
+export function array<T>(defaultValue: T[]): TypedCollectionDefinitionAPI<T[]>
+{
+    const template = ArrayTemplate.fromExample(defaultValue);
+    template.withDefault(defaultValue);
+    return template;
+}
+
+export function arrayOf<T extends TypeOption[]>(...types: T): TypedCollectionDefinitionAPI<Resolve<T[number]>[]>
+{
+    return ArrayTemplate.fromTypes(...types) as unknown as TypedCollectionDefinitionAPI<Resolve<T[number]>[]>;
+}
 
 
 
