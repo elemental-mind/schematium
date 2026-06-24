@@ -1,0 +1,16 @@
+{
+  "name": "schematium",
+  "version": "0.1.0",
+  "description": "Schema / templating library.",
+  "type": "module",
+  "scripts": {
+    "test": "unitium-tsx"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "unitium": "^0.8.4"
+  },
+  "engines": {
+    "node": ">=22.6.0"
+  }
+}
