@@ -1,3 +1,4 @@
+import { Debug } from "unitium";
 import * as assert from "node:assert";
 import { array, arrayOf, boolean, list, listOf, number, schema, string, type TemplateObject, valueOf } from "./templating.ts";
 
@@ -70,6 +71,44 @@ export class PrimitiveDefnitionTests
         assert.strictEqual(template.validate(5), true);
         assert.strictEqual(template.validate(-1), false);
     }
+
+    parsesStringValue()
+    {
+        const t = string();
+        assert.strictEqual(withValidate(t).parseString("hello"), "hello");
+    }
+
+    parsesNumberValue()
+    {
+        const t = number();
+        assert.strictEqual(withValidate(t).parseString("42"), 42);
+    }
+
+    throwsOnInvalidNumber()
+    {
+        const t = number();
+        assert.throws(() => withValidate(t).parseString("not-a-number"), /Cannot parse/);
+    }
+
+    parsesBooleanTrue()
+    {
+        const t = boolean();
+        assert.strictEqual(withValidate(t).parseString("true"), true);
+        assert.strictEqual(withValidate(t).parseString("1"), true);
+    }
+
+    parsesBooleanFalse()
+    {
+        const t = boolean();
+        assert.strictEqual(withValidate(t).parseString("false"), false);
+        assert.strictEqual(withValidate(t).parseString("0"), false);
+    }
+
+    throwsOnInvalidBoolean()
+    {
+        const t = boolean();
+        assert.throws(() => withValidate(t).parseString("yes"), /Cannot parse/);
+    }
 }
 
 // ============================================================
@@ -101,6 +140,68 @@ export class VariadicDefinitionTests
         const template = withValidate(t);
         assert.strictEqual(template.validate([2, 4, 6]), true);
         assert.strictEqual(template.validate([1, 3, 5]), false);
+    }
+
+    // ============================================================
+    // Variadic parseString — CLI args arrive as strings, so we need
+    // to coerce numbers, booleans etc. from their string form.
+    // ============================================================
+
+    numberTakesPriorityOverStringWhenParsing()
+    {
+        // number (priority 0) is tried before string (priority 2) → "42" → 42
+        const t = valueOf(number, string);
+        assert.strictEqual(withValidate(t).parseString("42"), 42);
+    }
+
+    stringIsFallbackWhenNumberCannotParse()
+    {
+        // number fails on "hello", string catches it
+        const t = valueOf(number, string);
+        assert.strictEqual(withValidate(t).parseString("hello"), "hello");
+    }
+
+    userPassedOrderDoesNotAffectParsePriority()
+    {
+        // Even when string is listed first, number (priority 0) is tried before
+        // string (priority 2), so "42" parses as number 42.
+        const t = valueOf(string, number);
+        assert.strictEqual(withValidate(t).parseString("42"), 42);
+    }
+
+    parsesBooleanTrueFromString()
+    {
+        // number (priority 0) tried first, fails on "true"/"1"; then boolean (priority 1) catches them
+        const t = valueOf(number, boolean);
+        assert.strictEqual(withValidate(t).parseString("true"), true);
+        assert.strictEqual(withValidate(t).parseString("1"), 1);
+    }
+
+    parsesBooleanFalseFromString()
+    {
+        const t = valueOf(boolean);
+        assert.strictEqual(withValidate(t).parseString("false"), false);
+        assert.strictEqual(withValidate(t).parseString("0"), false);
+    }
+
+    singleNumberTypeThrowsOnInvalidString()
+    {
+        const t = valueOf(number);
+        assert.throws(() => withValidate(t).parseString("not-a-number"));
+    }
+
+    singleStringTypeReturnsIdentity()
+    {
+        const t = valueOf(string);
+        assert.strictEqual(withValidate(t).parseString("anything"), "anything");
+    }
+    
+    emptyStringParsesAsStringWhenNumberIsPermitted()
+    {
+        // Number("") === 0, which is finite, so number matches
+        const t = valueOf(number, string);
+        assert.strictEqual(withValidate(t).parseString(""), "");
+        assert.strictEqual(withValidate(t).parseString(" "), " ");
     }
 }
 
@@ -211,9 +312,9 @@ export class ListDefinitionTests
     {
         const t = list({ value: { value: "text", anotherValue: "also text" } });
         const template = withValidate(t);
-        assert.strictEqual(template.validate({value: { value: "foo", anotherValue: "bar" }}), true);
-        assert.strictEqual(template.validate({value: { value: "foo", newName: "bar" }}), true);
-        assert.strictEqual(template.validate({value: { value: 123 }}), false);
+        assert.strictEqual(template.validate({ value: { value: "foo", anotherValue: "bar" } }), true);
+        assert.strictEqual(template.validate({ value: { value: "foo", newName: "bar" } }), true);
+        assert.strictEqual(template.validate({ value: { value: 123 } }), false);
     }
 
     rejectsNonObjectInput()
@@ -269,6 +370,13 @@ export class ListDefinitionTests
         assert.strictEqual(template.validate({ "": "empty" }), true);
         assert.strictEqual(template.validate({ key: "x", anotherKey: "y" }), true);
     }
+
+    parsesListFromJson()
+    {
+        const t = listOf(string);
+        const result = withValidate(t).parseString('{"a":"x"}');
+        assert.deepStrictEqual(result, { a: "x" });
+    }
 }
 
 // ============================================================
@@ -309,62 +417,10 @@ export class ArrayDefinitionTests
         assert.deepStrictEqual(raw.default, [1, 2, 3]);
         assert.strictEqual(raw.isOptional, true);
     }
-}
-
-// ============================================================
-// Parsing
-// ============================================================
-
-export class ParsingTests
-{
-    parsesStringValue()
-    {
-        const t = string();
-        assert.strictEqual(withValidate(t).parseString("hello"), "hello");
-    }
-
-    parsesNumberValue()
-    {
-        const t = number();
-        assert.strictEqual(withValidate(t).parseString("42"), 42);
-    }
-
-    throwsOnInvalidNumber()
-    {
-        const t = number();
-        assert.throws(() => withValidate(t).parseString("not-a-number"), /Cannot parse/);
-    }
-
-    parsesBooleanTrue()
-    {
-        const t = boolean();
-        assert.strictEqual(withValidate(t).parseString("true"), true);
-        assert.strictEqual(withValidate(t).parseString("1"), true);
-    }
-
-    parsesBooleanFalse()
-    {
-        const t = boolean();
-        assert.strictEqual(withValidate(t).parseString("false"), false);
-        assert.strictEqual(withValidate(t).parseString("0"), false);
-    }
-
-    throwsOnInvalidBoolean()
-    {
-        const t = boolean();
-        assert.throws(() => withValidate(t).parseString("yes"), /Cannot parse/);
-    }
 
     parsesArrayFromJson()
     {
         const t = arrayOf(number);
         assert.deepStrictEqual(withValidate(t).parseString("[1, 2, 3]"), [1, 2, 3]);
-    }
-
-    parsesListFromJson()
-    {
-        const t = listOf(string);
-        const result = withValidate(t).parseString('{"a":"x"}');
-        assert.deepStrictEqual(result, { a: "x" });
     }
 }

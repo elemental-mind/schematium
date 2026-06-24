@@ -255,7 +255,7 @@ class NumberTemplate extends ValueTemplate<number>
     parseString(value: string): number
     {
         const parsed = Number(value);
-        if (!Number.isFinite(parsed))
+        if (!Number.isFinite(parsed) || value.trim() === "")
             throw new Error(`Cannot parse "${value}" as number`);
         return parsed;
     }
@@ -329,12 +329,14 @@ class VariadicTemplate<T> extends ValueTemplate<T>
     {
         // permittedTypes is already sorted by priority (number → boolean → objects → string)
         for (const permittedType of this.permittedTypes)
+        {
             try
             {
                 const value = permittedType.parseString(valueString);
                 if (permittedType.validate(value)) return value;
             }
             catch (e) { continue; }
+        }
         throw new Error("Could not match input to any possible type");
     }
 
