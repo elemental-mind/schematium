@@ -1,2 +1,2 @@
-export { GenerateTemplatingAPI } from "./templating.ts";
-export type { TemplatingAPI, TemplateObject } from "./templating.ts";
+export type { TemplateObject } from "./templating.ts";
+export { array, arrayOf, list, listOf, boolean, string, number, object, oneOf, schema, valueOf } from "./templating.ts";
