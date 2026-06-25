@@ -76,7 +76,7 @@ export interface TemplatingAPI
         number(defaultValue: number): ValueDefinitionAPI<number>;
         boolean(): ValueDefinitionAPI<boolean | undefined>;
         boolean(defaultValue: boolean): ValueDefinitionAPI<boolean>;
-        object(value: TemplateObject): ValueDefinitionAPI<any>;
+        object<T extends TemplateObject>(value: T): ValueDefinitionAPI<Concrete<T>>;
     },
     variadics: {
         valueOf(...types: any[]): ValueDefinitionAPI<any>;
@@ -84,9 +84,9 @@ export interface TemplatingAPI
     },
     collections: {
         list<T>(defaultValue: Record<string, T>): CollectionDefinitionAPI<Record<string, T>>;
-        listOf(...types: TypeOption[]): TypedCollectionDefinitionAPI<any>;
+        listOf<T extends TypeOption[]>(...types: T): TypedCollectionDefinitionAPI<Record<string, ResolveTypeInput<T[number]>>>;
         array<T>(defaultValue: T[]): CollectionDefinitionAPI<T[]>;
-        arrayOf(...types: TypeOption[]): TypedCollectionDefinitionAPI<any>;
+        arrayOf<T extends TypeOption[]>(...types: T): TypedCollectionDefinitionAPI<ResolveTypeInput<T[number]>[]>;
     },
 };
 
@@ -472,8 +472,6 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
     return { ValueTemplate, StringTemplate, NumberTemplate, BooleanTemplate, VariadicTemplate, ObjectTemplate, CollectionTemplate, ListTemplate, ArrayTemplate } as const;
 }
 
-export function GenerateTemplatingAPI(): TemplatingAPI;
-export function GenerateTemplatingAPI<TBase extends new (...args: any[]) => any>(BaseClass: TBase): TemplatingAPI;
 export function GenerateTemplatingAPI(BaseClass: new (...args: any[]) => any = Object): TemplatingAPI
 {
     const { ValueTemplate, StringTemplate, NumberTemplate, BooleanTemplate, VariadicTemplate, ObjectTemplate, CollectionTemplate, ListTemplate, ArrayTemplate } = generateTemplatingClasses(BaseClass);
@@ -533,7 +531,7 @@ export function GenerateTemplatingAPI(BaseClass: new (...args: any[]) => any = O
         return ValueTemplate.fromExamples(...possibleValues).accepts(value => valueSet.has(value));
     }
 
-    function object<T extends TemplateObject>(value: T): ValueDefinitionAPI<ResolveTypeInput<T>>
+    function object<T extends TemplateObject>(value: T): ValueDefinitionAPI<Concrete<T>>
     {
         return ObjectTemplate.fromTemplateObject(value);
     }
