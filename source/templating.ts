@@ -1,13 +1,13 @@
 type PrimitiveTemplate = typeof number | typeof string | typeof boolean;
 type PrimitiveString = "string" | "boolean" | "number";
 // Structural type matching the ValueTemplate class returned from generateBaseClasses
-export interface ValueTemplateInterface
+export interface ValueTemplateAPI<T>
 {
-    validate(value: any): boolean;
-    parseString(value: string): any;
+    validate(value: T): boolean;
+    parseString(value: string): T;
 }
 
-type TypeOption = PrimitiveTemplate | TemplateObject | ValueTemplateInterface;
+type TypeOption = PrimitiveTemplate | TemplateObject | ValueTemplateAPI<any>;
 type ResolveTypeInput<T extends TypeOption> =
     T extends typeof number ? number :
     T extends typeof string ? string :
@@ -28,11 +28,6 @@ type OptionalityDefinitionSelf<T> = OptionalityDefinitionAPI<T, OptionalityDefin
 type ValueDefinitionSelf<T> = ValueDefinitionAPI<T, ValueDefinitionSelf<T>>;
 type CollectionDefinitionSelf<T> = CollectionDefinitionAPI<T, CollectionDefinitionSelf<T>>;
 type TypedCollectionDefinitionSelf<T> = TypedCollectionDefinitionAPI<T, TypedCollectionDefinitionSelf<T>>;
-
-export interface ParsingAPI<T>
-{
-    parseString: (value: string) => T;
-}
 
 export interface OptionalityDefinitionAPI<T, TSelf extends OptionalityDefinitionAPI<T, TSelf> = OptionalityDefinitionSelf<T>>
 {
@@ -71,25 +66,43 @@ export type EntryValidationClosure<T> =
 
 export interface TemplatingAPI
 {
-    schema(inputSchema: TemplateObject): ValueDefinitionAPI<any>;
-    string(): ValueDefinitionAPI<string | undefined>;
-    string(defaultValue: string): ValueDefinitionAPI<string>;
-    number(): ValueDefinitionAPI<number | undefined>;
-    number(defaultValue: number): ValueDefinitionAPI<number>;
-    boolean(): ValueDefinitionAPI<boolean | undefined>;
-    boolean(defaultValue: boolean): ValueDefinitionAPI<boolean>;
-    valueOf(...types: any[]): ValueDefinitionAPI<any>;
-    oneOf<T extends string | number>(...possibleValues: T[]): OptionalityDefinitionAPI<T>;
-    object(value: TemplateObject): ValueDefinitionAPI<any>;
-    list<T>(defaultValue: Record<string, T>): TypedCollectionDefinitionAPI<Record<string, T>>;
-    listOf(...types: any[]): TypedCollectionDefinitionAPI<any>;
-    array<T>(defaultValue: T[]): TypedCollectionDefinitionAPI<T[]>;
-    arrayOf(...types: any[]): TypedCollectionDefinitionAPI<any>;
-}
+    templating: {
+        schema<T extends TemplateObject>(inputSchema: T): ValueTemplateAPI<Concrete<T>>;
+    },
+    primitives: {
+        string(): ValueDefinitionAPI<string | undefined>;
+        string(defaultValue: string): ValueDefinitionAPI<string>;
+        number(): ValueDefinitionAPI<number | undefined>;
+        number(defaultValue: number): ValueDefinitionAPI<number>;
+        boolean(): ValueDefinitionAPI<boolean | undefined>;
+        boolean(defaultValue: boolean): ValueDefinitionAPI<boolean>;
+        object(value: TemplateObject): ValueDefinitionAPI<any>;
+    },
+    variadics: {
+        valueOf(...types: any[]): ValueDefinitionAPI<any>;
+        oneOf<T extends string | number>(...possibleValues: T[]): OptionalityDefinitionAPI<T>;
+    },
+    collections: {
+        list<T>(defaultValue: Record<string, T>): CollectionDefinitionAPI<Record<string, T>>;
+        listOf(...types: TypeOption[]): TypedCollectionDefinitionAPI<any>;
+        array<T>(defaultValue: T[]): CollectionDefinitionAPI<T[]>;
+        arrayOf(...types: TypeOption[]): TypedCollectionDefinitionAPI<any>;
+    },
+};
+
+export type ExtensibleTemplatingAPI<TemplateExtensions = {}, PrimitiveExtensions = {}, VariadicExtensions = {}, CollectionExtensions = {}> =
+    {
+        [K in keyof TemplatingAPI]:
+        K extends "templating" ? { [S in keyof TemplatingAPI["templating"]]: TemplatingAPI["templating"][S] & TemplateExtensions } :
+        K extends "primitives" ? { [S in keyof TemplatingAPI["primitives"]]: TemplatingAPI["primitives"][S] & PrimitiveExtensions } :
+        K extends "variadics" ? { [S in keyof TemplatingAPI["variadics"]]: TemplatingAPI["variadics"][S] & VariadicExtensions } :
+        K extends "collections" ? { [S in keyof TemplatingAPI["collections"]]: TemplatingAPI["collections"][S] & CollectionExtensions } :
+        never
+    };
 
 function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Object)
 {
-    abstract class ValueTemplate<T> extends BaseClass implements ParsingAPI<T>, ValueDefinitionAPI<T>
+    abstract class ValueTemplate<T> extends BaseClass implements ValueTemplateAPI<T>, ValueDefinitionAPI<T>
     {
         static fromExample(exampleValue: any): ValueTemplate<any>
         {
@@ -549,9 +562,17 @@ export function GenerateTemplatingAPI(BaseClass: new (...args: any[]) => any = O
         return ArrayTemplate.fromTypes(...types) as unknown as TypedCollectionDefinitionAPI<ResolveTypeInput<T[number]>[]>;
     }
 
-    return { schema, string, number, boolean, valueOf, oneOf, object, list, listOf, array, arrayOf };
+    return {
+        templating: { schema },
+        primitives: { string, number, boolean, object },
+        variadics: { valueOf, oneOf },
+        collections: { list, listOf, array, arrayOf }
+    };
 }
 
-// Default API instance — re-exports individual named functions for convenience
-const _defaultAPI = GenerateTemplatingAPI();
-export const { schema, string, number, boolean, valueOf, oneOf, object, list, listOf, array, arrayOf } = _defaultAPI;
+const defaultAPI = GenerateTemplatingAPI();
+export default defaultAPI;
+export const { schema } = defaultAPI.templating;
+export const { string, number, boolean, object } = defaultAPI.primitives;
+export const { valueOf, oneOf } = defaultAPI.variadics;
+export const { list, listOf, array, arrayOf } = defaultAPI.collections;
