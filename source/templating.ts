@@ -26,12 +26,6 @@ type TypedCollectionDefinitionSelf<T> = TypedCollectionDefinitionAPI<T, TypedCol
 declare const required: unique symbol;
 declare const forceRequired: unique symbol;
 
-interface OptionalityInternals
-{
-    [required]: boolean;
-    [forceRequired]?: boolean;
-}
-
 type Required = { [required]: true; };
 type StrictlyRequired = { [forceRequired]: true; };
 type Optional = { [required]: false; };
