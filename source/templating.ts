@@ -93,12 +93,21 @@ export interface TemplatingAPI
 export type ExtensibleTemplatingAPI<TemplateExtensions = {}, PrimitiveExtensions = {}, VariadicExtensions = {}, CollectionExtensions = {}> =
     {
         [K in keyof TemplatingAPI]:
-        K extends "templating" ? { [S in keyof TemplatingAPI["templating"]]: TemplatingAPI["templating"][S] & TemplateExtensions } :
-        K extends "primitives" ? { [S in keyof TemplatingAPI["primitives"]]: TemplatingAPI["primitives"][S] & PrimitiveExtensions } :
-        K extends "variadics" ? { [S in keyof TemplatingAPI["variadics"]]: TemplatingAPI["variadics"][S] & VariadicExtensions } :
-        K extends "collections" ? { [S in keyof TemplatingAPI["collections"]]: TemplatingAPI["collections"][S] & CollectionExtensions } :
+        K extends "templating" ? ExtendAllMemberReturnsOf<TemplatingAPI["templating"], TemplateExtensions> :
+        K extends "primitives" ? ExtendAllMemberReturnsOf<TemplatingAPI["primitives"], PrimitiveExtensions> :
+        K extends "variadics" ? ExtendAllMemberReturnsOf<TemplatingAPI["variadics"], VariadicExtensions> :
+        K extends "collections" ? ExtendAllMemberReturnsOf<TemplatingAPI["collections"], CollectionExtensions> :
         never
     };
+
+type ExtendAllMemberReturnsOf<Container, Extension> = {
+    [K in keyof Container]: ExtendReturn<Container[K], Extension>
+};
+
+type ExtendReturn<F, Extension> =
+    F extends (...args: infer A) => infer R ? (...args: A) => R & Extension : never;
+
+
 
 function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Object)
 {
@@ -472,7 +481,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
     return { ValueTemplate, StringTemplate, NumberTemplate, BooleanTemplate, VariadicTemplate, ObjectTemplate, CollectionTemplate, ListTemplate, ArrayTemplate } as const;
 }
 
-export function GenerateTemplatingAPI(BaseClass: new (...args: any[]) => any = Object): TemplatingAPI
+export function GenerateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args: any[]) => any = Object): T
 {
     const { ValueTemplate, StringTemplate, NumberTemplate, BooleanTemplate, VariadicTemplate, ObjectTemplate, CollectionTemplate, ListTemplate, ArrayTemplate } = generateTemplatingClasses(BaseClass);
 
@@ -565,7 +574,7 @@ export function GenerateTemplatingAPI(BaseClass: new (...args: any[]) => any = O
         primitives: { string, number, boolean, object },
         variadics: { valueOf, oneOf },
         collections: { list, listOf, array, arrayOf }
-    };
+    } as T;
 }
 
 const defaultAPI = GenerateTemplatingAPI();
