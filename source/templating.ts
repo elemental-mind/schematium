@@ -1,11 +1,5 @@
 type PrimitiveTemplate = typeof number | typeof string | typeof boolean;
 type PrimitiveString = "string" | "boolean" | "number";
-// Structural type matching the ValueTemplate class returned from generateBaseClasses
-export interface ValueTemplateAPI<T>
-{
-    validate(value: T): boolean;
-    parseString(value: string): T;
-}
 
 type TypeOption = PrimitiveTemplate | TemplateObject | ValueTemplateAPI<any>;
 type ResolveTypeInput<T extends TypeOption> =
@@ -18,7 +12,7 @@ type ResolveTypeInput<T extends TypeOption> =
 
 type Concrete<T extends TemplateObject> = {
     [K in keyof T]:
-    T[K] extends ValueDefinitionAPI<infer V> ? V :
+    T[K] extends ValueConfiguration<infer V> ? T[K] extends Required ? Exclude<V, undefined> : V | undefined :
     T[K] extends TemplateObject ? Concrete<T[K]>
     : never
 };
@@ -29,10 +23,41 @@ type ValueDefinitionSelf<T> = ValueDefinitionAPI<T, ValueDefinitionSelf<T>>;
 type CollectionDefinitionSelf<T> = CollectionDefinitionAPI<T, CollectionDefinitionSelf<T>>;
 type TypedCollectionDefinitionSelf<T> = TypedCollectionDefinitionAPI<T, TypedCollectionDefinitionSelf<T>>;
 
+declare const required: unique symbol;
+declare const forceRequired: unique symbol;
+
+interface OptionalityInternals
+{
+    [required]: boolean;
+    [forceRequired]?: boolean;
+}
+
+type Required = { [required]: true; };
+type StrictlyRequired = { [forceRequired]: true; };
+type Optional = { [required]: false; };
+type StrictlyOptional = { [forceRequired]: false; };
+
+type ForceRequired<T, ForcedState extends boolean> = 
+    Omit<T, typeof required | typeof forceRequired> & 
+    (ForcedState extends true ? StrictlyRequired & Required : StrictlyOptional & Optional);
+
+type SetRequired<T, DefaultState extends boolean> =
+    Omit<T, typeof required | typeof forceRequired> & (
+        T extends StrictlyRequired ? StrictlyRequired & Required :
+        T extends StrictlyOptional ? StrictlyOptional & Optional :
+        { [required]: DefaultState; }
+    );
+
+export interface ValueTemplateAPI<T>
+{
+    validate(value: T): boolean;
+    parseString(value: string): T;
+}
+
 export interface OptionalityDefinitionAPI<T, TSelf extends OptionalityDefinitionAPI<T, TSelf> = OptionalityDefinitionSelf<T>>
 {
-    required: TSelf;
-    optional: TSelf;
+    required: ForceRequired<TSelf, true>;
+    optional: ForceRequired<TSelf, false>;
 }
 
 export interface ValueDefinitionAPI<T, TSelf extends ValueDefinitionAPI<T, TSelf> = ValueDefinitionSelf<T>> extends OptionalityDefinitionAPI<T, TSelf>
@@ -47,7 +72,7 @@ export interface CollectionDefinitionAPI<T, TSelf extends CollectionDefinitionAP
 
 export interface TypedCollectionDefinitionAPI<T, TSelf extends TypedCollectionDefinitionAPI<T, TSelf> = TypedCollectionDefinitionSelf<T>> extends CollectionDefinitionAPI<T, TSelf>
 {
-    withDefault: (defaultValue: T) => TSelf;
+    withDefault: (defaultValue: T) => SetRequired<TSelf, false>;
 }
 
 export interface TemplateObject
@@ -64,55 +89,44 @@ export type EntryValidationClosure<T> =
     T extends Record<string, infer E> ? (key: string, value: E) => boolean :
     never;
 
-export interface TemplatingAPI
+export interface TemplatingAPI<
+    TemplateExt = {},
+    PrimitiveExt = {},
+    VariadicExt = {},
+    CollectionExt = {}
+>
 {
     templating: {
-        schema<T extends TemplateObject>(inputSchema: T): ValueTemplateAPI<Concrete<T>>;
+        schema<T extends TemplateObject>(inputSchema: T): ValueTemplateAPI<Concrete<T>> & TemplateExt;
     },
     primitives: {
-        string(): ValueDefinitionAPI<string | undefined>;
-        string(defaultValue: string): ValueDefinitionAPI<string>;
-        number(): ValueDefinitionAPI<number | undefined>;
-        number(defaultValue: number): ValueDefinitionAPI<number>;
-        boolean(): ValueDefinitionAPI<boolean | undefined>;
-        boolean(defaultValue: boolean): ValueDefinitionAPI<boolean>;
-        object<T extends TemplateObject>(value: T): ValueDefinitionAPI<Concrete<T>>;
+        string(): ValueDefinitionAPI<string> & PrimitiveExt & Required;
+        string(defaultValue: string): ValueDefinitionAPI<string> & PrimitiveExt & Optional;
+        number(): ValueDefinitionAPI<number> & PrimitiveExt & Required;
+        number(defaultValue: number): ValueDefinitionAPI<number> & PrimitiveExt & Optional;
+        boolean(): ValueDefinitionAPI<boolean> & PrimitiveExt & Required;
+        boolean(defaultValue: boolean): ValueDefinitionAPI<boolean> & PrimitiveExt & Optional;
+        object<T extends TemplateObject>(value: T): ValueDefinitionAPI<Concrete<T>> & PrimitiveExt & Required;
     },
     variadics: {
-        valueOf(...types: any[]): ValueDefinitionAPI<any>;
-        oneOf<T extends string | number>(...possibleValues: T[]): OptionalityDefinitionAPI<T>;
+        valueOf<T extends TypeOption[]>(...types: T): ValueDefinitionAPI<ResolveTypeInput<T[number]>> & VariadicExt & Required;
+        oneOf<T extends string | number>(...possibleValues: T[]): OptionalityDefinitionAPI<T> & VariadicExt & Required;
     },
     collections: {
-        list<T>(defaultValue: Record<string, T>): CollectionDefinitionAPI<Record<string, T>>;
-        listOf<T extends TypeOption[]>(...types: T): TypedCollectionDefinitionAPI<Record<string, ResolveTypeInput<T[number]>>>;
-        array<T>(defaultValue: T[]): CollectionDefinitionAPI<T[]>;
-        arrayOf<T extends TypeOption[]>(...types: T): TypedCollectionDefinitionAPI<ResolveTypeInput<T[number]>[]>;
+        list<T>(defaultValue: Record<string, T>): CollectionDefinitionAPI<Record<string, T>> & CollectionExt & Optional;
+        listOf<T extends TypeOption[]>(...types: T): TypedCollectionDefinitionAPI<Record<string, ResolveTypeInput<T[number]>>> & CollectionExt & Required;
+        array<T>(defaultValue: T[]): CollectionDefinitionAPI<T[]> & CollectionExt & Optional;
+        arrayOf<T extends TypeOption[]>(...types: T): TypedCollectionDefinitionAPI<ResolveTypeInput<T[number]>[]> & CollectionExt & Required;
     },
-};
-
-export type ExtensibleTemplatingAPI<TemplateExtensions = {}, PrimitiveExtensions = {}, VariadicExtensions = {}, CollectionExtensions = {}> =
-    {
-        [K in keyof TemplatingAPI]:
-        K extends "templating" ? ExtendAllMemberReturnsOf<TemplatingAPI["templating"], TemplateExtensions> :
-        K extends "primitives" ? ExtendAllMemberReturnsOf<TemplatingAPI["primitives"], PrimitiveExtensions> :
-        K extends "variadics" ? ExtendAllMemberReturnsOf<TemplatingAPI["variadics"], VariadicExtensions> :
-        K extends "collections" ? ExtendAllMemberReturnsOf<TemplatingAPI["collections"], CollectionExtensions> :
-        never
-    };
-
-type ExtendAllMemberReturnsOf<Container, Extension> = {
-    [K in keyof Container]: ExtendReturn<Container[K], Extension>
-};
-
-type ExtendReturn<F, Extension> =
-    F extends (...args: infer A) => infer R ? (...args: A) => R & Extension : never;
-
-
+}
 
 function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Object)
 {
     abstract class ValueTemplate<T> extends BaseClass implements ValueTemplateAPI<T>, ValueDefinitionAPI<T>
     {
+        declare [required]: boolean;
+        declare [forceRequired]: boolean;
+
         static fromExample(exampleValue: any): ValueTemplate<any>
         {
             switch (typeof exampleValue)
@@ -209,25 +223,25 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return 3;
         }
 
-        get required()
+        get required() : any
         {
             this.isOptional = false;
             return this;
         }
 
-        get optional()
+        get optional() : any
         {
             this.isOptional = true;
             return this;
         }
 
-        accepts(validator: (value: T) => boolean)
+        accepts(validator: (value: T) => boolean) : any
         {
             this.customValidator = validator;
             return this;
         }
 
-        withDefault(defaultValue: T)
+        withDefault(defaultValue: T) : any
         {
             this.default = defaultValue;
             this.isOptional = true;
@@ -376,7 +390,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             this.entryTemplate = entryTemplate;
         }
 
-        abstract acceptsEntries(validator: EntryValidationClosure<T>): this;
+        abstract acceptsEntries(validator: EntryValidationClosure<T>): any;
     }
 
     class ListTemplate<T> extends CollectionTemplate<Record<string, T>>
@@ -481,7 +495,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
     return { ValueTemplate, StringTemplate, NumberTemplate, BooleanTemplate, VariadicTemplate, ObjectTemplate, CollectionTemplate, ListTemplate, ArrayTemplate } as const;
 }
 
-export function GenerateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args: any[]) => any = Object): T
+export function GenerateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args: any[]) => any = Object)
 {
     const { ValueTemplate, StringTemplate, NumberTemplate, BooleanTemplate, VariadicTemplate, ObjectTemplate, CollectionTemplate, ListTemplate, ArrayTemplate } = generateTemplatingClasses(BaseClass);
 
@@ -490,9 +504,9 @@ export function GenerateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args
         return ObjectTemplate.fromTemplateObject(inputSchema);
     }
 
-    function string(): ValueDefinitionAPI<string | undefined>;
-    function string(defaultValue: string): ValueDefinitionAPI<string>;
-    function string(defaultValue?: string)
+    function string(): ValueDefinitionAPI<string> & Required;
+    function string(defaultValue: string): ValueDefinitionAPI<string> & Optional;
+    function string(defaultValue?: string): any
     {
         const template = new StringTemplate();
         if (defaultValue !== undefined)
@@ -503,9 +517,9 @@ export function GenerateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args
         return template;
     }
 
-    function number(): ValueDefinitionAPI<number | undefined>;
-    function number(defaultValue: number): ValueDefinitionAPI<number>;
-    function number(defaultValue?: number)
+    function number(): ValueDefinitionAPI<number> & Required;
+    function number(defaultValue: number): ValueDefinitionAPI<number> & Optional;
+    function number(defaultValue?: number): any
     {
         const template = new NumberTemplate();
         if (defaultValue !== undefined)
@@ -516,9 +530,9 @@ export function GenerateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args
         return template;
     }
 
-    function boolean(): ValueDefinitionAPI<boolean | undefined>;
-    function boolean(defaultValue: boolean): ValueDefinitionAPI<boolean>;
-    function boolean(defaultValue?: boolean)
+    function boolean(): ValueDefinitionAPI<boolean> & Required;
+    function boolean(defaultValue: boolean): ValueDefinitionAPI<boolean> & Optional;
+    function boolean(defaultValue?: boolean): any
     {
         const template = new BooleanTemplate();
         if (defaultValue !== undefined)
@@ -529,44 +543,44 @@ export function GenerateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args
         return template;
     }
 
-    function valueOf<T extends TypeOption[]>(...types: T): ValueDefinitionAPI<ResolveTypeInput<T[number]>>
+    function valueOf<T extends TypeOption[]>(...types: T): ValueDefinitionAPI<ResolveTypeInput<T[number]>> & Required
     {
-        return ValueTemplate.fromTypeInputs(...types);
+        return ValueTemplate.fromTypeInputs(...types) as any;
     }
 
-    function oneOf<T extends string | number>(...possibleValues: T[]): OptionalityDefinitionAPI<T>
+    function oneOf<T extends string | number>(...possibleValues: T[]): OptionalityDefinitionAPI<T> & Required
     {
         const valueSet = new Set(possibleValues);
-        return ValueTemplate.fromExamples(...possibleValues).accepts(value => valueSet.has(value));
+        return ValueTemplate.fromExamples(...possibleValues).accepts(value => valueSet.has(value)) as any;
     }
 
-    function object<T extends TemplateObject>(value: T): ValueDefinitionAPI<Concrete<T>>
+    function object<T extends TemplateObject>(value: T): ValueDefinitionAPI<Concrete<T>> & Required
     {
-        return ObjectTemplate.fromTemplateObject(value);
+        return ObjectTemplate.fromTemplateObject(value) as any;
     }
 
-    function list<T>(defaultValue: Record<string, T>): TypedCollectionDefinitionAPI<Record<string, T>>
+    function list<T>(defaultValue: Record<string, T>): TypedCollectionDefinitionAPI<Record<string, T>> & Optional
     {
         const template = ListTemplate.fromExample<T>(defaultValue);
         template.withDefault(defaultValue);
-        return template;
+        return template as any;
     }
 
-    function listOf<T extends TypeOption[]>(...types: T): TypedCollectionDefinitionAPI<Record<string, ResolveTypeInput<T[number]>>>
+    function listOf<T extends TypeOption[]>(...types: T): TypedCollectionDefinitionAPI<Record<string, ResolveTypeInput<T[number]>>> & Required
     {
-        return ListTemplate.fromTypes(...types) as unknown as TypedCollectionDefinitionAPI<Record<string, ResolveTypeInput<T[number]>>>;
+        return ListTemplate.fromTypes(...types) as any;
     }
 
-    function array<T>(defaultValue: T[]): TypedCollectionDefinitionAPI<T[]>
+    function array<T>(defaultValue: T[]): TypedCollectionDefinitionAPI<T[]> & Optional
     {
         const template = ArrayTemplate.fromExample(defaultValue);
         template.withDefault(defaultValue);
-        return template;
+        return template as any;
     }
 
-    function arrayOf<T extends TypeOption[]>(...types: T): TypedCollectionDefinitionAPI<ResolveTypeInput<T[number]>[]>
+    function arrayOf<T extends TypeOption[]>(...types: T): TypedCollectionDefinitionAPI<ResolveTypeInput<T[number]>[]> & Required
     {
-        return ArrayTemplate.fromTypes(...types) as unknown as TypedCollectionDefinitionAPI<ResolveTypeInput<T[number]>[]>;
+        return ArrayTemplate.fromTypes(...types) as any;
     }
 
     return {
