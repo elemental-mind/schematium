@@ -42,7 +42,16 @@ export interface ValueTemplateAPI<T>
     parseString(value: string): T;
 }
 
-export interface OptionalityDefinitionAPI<T>
+export type ValueType<ThisType> = ThisType extends DefinitionAPI<infer T> ? T : never;
+
+declare const valueType: unique symbol;
+
+export interface DefinitionAPI<T>
+{
+    [valueType]: T;
+}
+
+export interface OptionalityDefinitionAPI<T> extends DefinitionAPI<T>
 {
     required: ForceRequired<this, true>;
     optional: ForceRequired<this, false>;
@@ -112,6 +121,8 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 {
     abstract class ValueTemplate<T> extends BaseClass implements ValueTemplateAPI<T>, ValueDefinitionAPI<T>
     {
+        declare [valueType]: T;
+
         static fromExample(exampleValue: any): ValueTemplate<any>
         {
             switch (typeof exampleValue)

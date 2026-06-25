@@ -12,5 +12,6 @@ export type {
     TemplateObjectEntry,
     ValueConfiguration,
     EntryValidationClosure,
-    TemplatingAPI
+    TemplatingAPI,
+    ValueType
 } from "./templating.ts";

@@ -1,5 +1,5 @@
 import * as assert from "node:assert";
-import { GenerateTemplatingAPI, type TemplatingAPI } from "./schematium-extensible.ts";
+import { GenerateTemplatingAPI, type TemplatingAPI, ValueType } from "./schematium-extensible.ts";
 import { Debug } from "unitium";
 
 export class BaseClassSubstitutionTests
@@ -76,5 +76,22 @@ export class DefinitionApiExtensionTests
         const result = api.primitives.number(42).tag("my-number");
 
         assert.strictEqual(result.tagValue, "my-number");
+    }
+
+    baseTypeIsAccessibleInCustomDefinedInterfaces()
+    {
+        class Extension
+        {
+            typeDependentClosure(closure: (value: ValueType<this>) => boolean) { return this; };
+        }
+
+        const api = GenerateTemplatingAPI<TemplatingAPI<{}, Extension, Extension, Extension>>(Extension);
+        api.primitives.number(42).typeDependentClosure((value: number) => true);
+        //@ts-expect-error should throw because boolean =! number
+        api.primitives.number(42).typeDependentClosure((value: boolean) => true);
+
+        api.variadics.valueOf(api.primitives.number, api.primitives.string).typeDependentClosure((value: string | number) => true);
+        //@ts-expect-error should throw because boll | number  =! number | string
+        api.variadics.valueOf(api.primitives.number, api.primitives.string).typeDependentClosure((value: bool | number) => true);
     }
 }
