@@ -39,9 +39,9 @@ type SetRequired<T, DefaultState extends boolean> =
 export interface ValueTemplateAPI<T>
 {
     isOptional: boolean;
-    default?: T;
     validate(value: T): boolean;
     parseString(value: string): T;
+    getDefault(): T | undefined;
 }
 
 export type ValueType<ThisType> = ThisType extends DefinitionAPI<infer T> ? T : never;
@@ -59,6 +59,11 @@ export interface OptionalityDefinitionAPI<T> extends DefinitionAPI<T>
     optional: ForceRequired<this, false>;
 }
 
+export interface DefaultDefitionAPI<T> extends DefinitionAPI<T>
+{
+    withDefault: (defaultValue: T, cloneWhenAssigned?: boolean) => SetRequired<this, false>;
+}
+
 export interface ValueDefinitionAPI<T> extends OptionalityDefinitionAPI<T>
 {
     accepts(validator: (value: T) => boolean): this;
@@ -69,10 +74,6 @@ export interface CollectionDefinitionAPI<T> extends ValueDefinitionAPI<T>
     acceptsEntries(validator: EntryValidationClosure<T>): this;
 }
 
-export interface TypedCollectionDefinitionAPI<T> extends CollectionDefinitionAPI<T>
-{
-    withDefault: (defaultValue: T) => SetRequired<this, false>;
-}
 
 export interface TemplateObject
 {
@@ -81,7 +82,7 @@ export interface TemplateObject
 
 export type TemplateObjectEntry<T = any> = TemplateObject | ValueConfiguration<T>;
 
-export type ValueConfiguration<T> = ValueDefinitionAPI<T> | CollectionDefinitionAPI<T> | TypedCollectionDefinitionAPI<T>;
+export type ValueConfiguration<T> = ValueDefinitionAPI<T> | CollectionDefinitionAPI<T>;
 
 export type EntryValidationClosure<T> =
     T extends Array<infer E> ? (value: E) => boolean :
@@ -99,29 +100,29 @@ export interface TemplatingAPI<
         schema<T extends TemplateObject>(inputSchema: T): ValueTemplateAPI<Concrete<T>> & TemplateExt;
     },
     primitives: {
-        string(): ValueDefinitionAPI<string> & PrimitiveExt & Required;
+        string(): ValueDefinitionAPI<string> & DefaultDefitionAPI<string> & PrimitiveExt & Required;
         string(defaultValue: string): ValueDefinitionAPI<string> & PrimitiveExt & Optional;
-        number(): ValueDefinitionAPI<number> & PrimitiveExt & Required;
+        number(): ValueDefinitionAPI<number> & DefaultDefitionAPI<number> & PrimitiveExt & Required;
         number(defaultValue: number): ValueDefinitionAPI<number> & PrimitiveExt & Optional;
-        boolean(): ValueDefinitionAPI<boolean> & PrimitiveExt & Required;
+        boolean(): ValueDefinitionAPI<boolean> & DefaultDefitionAPI<boolean> & PrimitiveExt & Required;
         boolean(defaultValue: boolean): ValueDefinitionAPI<boolean> & PrimitiveExt & Optional;
-        object<T extends TemplateObject>(value: T): ValueDefinitionAPI<Concrete<T>> & PrimitiveExt & Required;
+        object<T extends TemplateObject>(value: T): ValueDefinitionAPI<Concrete<T>> & DefaultDefitionAPI<Concrete<T>> & PrimitiveExt & Required;
     },
     variadics: {
-        valueOf<T extends TypeOption[]>(...types: T): ValueDefinitionAPI<ResolveTypeInput<T[number]>> & VariadicExt & Required;
-        oneOf<T extends string | number>(...possibleValues: T[]): OptionalityDefinitionAPI<T> & VariadicExt & Required;
+        valueOf<T extends TypeOption[]>(...types: T): ValueDefinitionAPI<ResolveTypeInput<T[number]>> & DefaultDefitionAPI<T[number]> & VariadicExt & Required;
+        oneOf<T extends string | number>(...possibleValues: T[]): OptionalityDefinitionAPI<T> & DefaultDefitionAPI<T> & VariadicExt & Required;
     },
     collections: {
-        list<T>(defaultValue: Record<string, T>): CollectionDefinitionAPI<Record<string, T>> & CollectionExt & Optional;
-        listOf<T extends TypeOption[]>(...types: T): TypedCollectionDefinitionAPI<Record<string, ResolveTypeInput<T[number]>>> & CollectionExt & Required;
-        array<T>(defaultValue: T[]): CollectionDefinitionAPI<T[]> & CollectionExt & Optional;
-        arrayOf<T extends TypeOption[]>(...types: T): TypedCollectionDefinitionAPI<ResolveTypeInput<T[number]>[]> & CollectionExt & Required;
+        list<T>(defaultValue: Record<string, T>, cloneOnDefaultAssignment?: boolean): CollectionDefinitionAPI<Record<string, T>> & CollectionExt & Optional;
+        listOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<Record<string, ResolveTypeInput<T[number]>>> & DefaultDefitionAPI<Record<string, ResolveTypeInput<T[number]>>> & CollectionExt & Required;
+        array<T>(defaultValue: T[], cloneOnDefaultAssignment?: boolean): CollectionDefinitionAPI<T[]> & CollectionExt & Optional;
+        arrayOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<ResolveTypeInput<T[number]>[]> & DefaultDefitionAPI<ResolveTypeInput<T[number]>[]> & CollectionExt & Required;
     },
 }
 
 function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Object)
 {
-    abstract class ValueTemplate<T> extends BaseClass implements ValueTemplateAPI<T>, ValueDefinitionAPI<T>
+    abstract class ValueTemplate<T> extends BaseClass implements ValueTemplateAPI<T>, ValueDefinitionAPI<T>, DefaultDefitionAPI<T>
     {
         declare [valueType]: T;
 
@@ -209,7 +210,8 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
         readonly parsingPriority: number = 3;
         public isOptional = false;
-        public default?: T;
+        protected default?: T;
+        public cloneDefaultWhenDefaultRequested = true;
         protected customValidator?: (value: T) => boolean;
 
         get required(): any
@@ -224,15 +226,21 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return this;
         }
 
+        get hasDefaultValue()
+        {
+            return this.default !== undefined;
+        }
+
         accepts(validator: (value: T) => boolean): any
         {
             this.customValidator = validator;
             return this;
         }
 
-        withDefault(defaultValue: T): any
+        withDefault(defaultValue: T, cloneWhenAssigned: boolean = true): any
         {
             this.default = defaultValue;
+            this.cloneDefaultWhenDefaultRequested = cloneWhenAssigned;
             this.isOptional = true;
             return this;
         }
@@ -244,6 +252,11 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             if (value === undefined && this.isOptional) return true;
             if (!this.validateType(value)) return false;
             return this.customValidator?.(value as T) ?? true;
+        }
+
+        getDefault()
+        {
+            return this.cloneDefaultWhenDefaultRequested ? structuredClone(this.default) : this.default;
         }
 
         abstract validateType(value: T): boolean;
@@ -331,18 +344,33 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
         public strict: boolean = true;
         public template: Map<string, ValueTemplate<any>> = new Map();
+        public hasNonCloneDefaultMembers: boolean = false;
+        private membersWithDefaultValues: Map<string, ValueTemplate<any>> = new Map();
 
         private constructor(templateObject: TemplateObject)
         {
             super();
             ObjectTemplate.TemplateCache.set(templateObject, this);
+
+            this.isOptional = true;
+
             for (const [key, value] of Object.entries(templateObject))
-                this.template.set(key, value instanceof ValueTemplate ? value : ObjectTemplate.fromTemplateObject(value as TemplateObject));
+            {
+                const subTemplate = value instanceof ValueTemplate ? value : ObjectTemplate.fromTemplateObject(value as TemplateObject);
 
-            if ([...this.template.values()].every(value => value.isOptional))
-                this.isOptional = true;
+                this.template.set(key, subTemplate);
 
-            this.deriveDefaultValue();
+                if (subTemplate.hasDefaultValue)
+                    this.membersWithDefaultValues.set(key, subTemplate);
+
+                //If one of the values is not optional make whole object not optional.
+                this.isOptional &&= subTemplate.isOptional;
+            }
+        }
+
+        get hasDefaultValue()
+        {
+            return this.default !== undefined || this.membersWithDefaultValues.size !== 0;
         }
 
         parseString(value: string): T
@@ -373,27 +401,24 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return true;
         }
 
-        private deriveDefaultValue()
+        getDefault(): T | undefined
         {
-            const defaultChildren = new Array<[key: string, template: ValueTemplate<any>]>();
+            if (!this.hasDefaultValue)
+                return undefined;
 
-            for (const entry of this.template)
-                //entry is [key, value], entry[1] hence the template of the entry.
-                if (entry[1].default !== undefined) defaultChildren.push(entry);
+            if (this.default !== undefined)
+                return super.getDefault();
 
-            if (defaultChildren.length)
-            {
-                const defaultObject = {} as Record<string, any>;
+            //If no default value has been supplied we just create a new object every time.
+            const clone = {} as any;
+            for (const [key, template] of this.membersWithDefaultValues)
+                clone[key] = template.getDefault();
 
-                for (const [key, value] of defaultChildren)
-                    defaultObject[key] = value.default;
-
-                this.default = defaultObject as T;
-            }
+            return clone;
         }
     }
 
-    abstract class CollectionTemplate<T> extends ValueTemplate<T> implements TypedCollectionDefinitionAPI<T>
+    abstract class CollectionTemplate<T> extends ValueTemplate<T> implements CollectionDefinitionAPI<T>
     {
         readonly parsingPriority: number = 2;
         protected entryTemplate: ValueTemplate<any> | VariadicTemplate<any>;
@@ -549,26 +574,22 @@ export function GenerateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args
         return ObjectTemplate.fromTemplateObject(value) as any;
     }
 
-    function list<T>(defaultValue: Record<string, T>): TypedCollectionDefinitionAPI<Record<string, T>> & Optional
+    function list<T>(defaultValue: Record<string, T>, cloneOnDefaultAssignment: boolean = true): CollectionDefinitionAPI<Record<string, T>> & Optional
     {
-        const template = ListTemplate.fromExample<T>(defaultValue);
-        template.withDefault(defaultValue);
-        return template as any;
+        return ListTemplate.fromExample<T>(defaultValue).withDefault(defaultValue, cloneOnDefaultAssignment);
     }
 
-    function listOf<T extends TypeOption[]>(...types: T): TypedCollectionDefinitionAPI<Record<string, ResolveTypeInput<T[number]>>> & Required
+    function listOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<Record<string, ResolveTypeInput<T[number]>>> & Required
     {
         return ListTemplate.fromTypes(...types) as any;
     }
 
-    function array<T>(defaultValue: T[]): TypedCollectionDefinitionAPI<T[]> & Optional
+    function array<T>(defaultValue: T[], cloneOnDefaultAssignment = true): CollectionDefinitionAPI<T[]> & Optional
     {
-        const template = ArrayTemplate.fromExample(defaultValue);
-        template.withDefault(defaultValue);
-        return template as any;
+        return ArrayTemplate.fromExample(defaultValue).withDefault(defaultValue, cloneOnDefaultAssignment);
     }
 
-    function arrayOf<T extends TypeOption[]>(...types: T): TypedCollectionDefinitionAPI<ResolveTypeInput<T[number]>[]> & Required
+    function arrayOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<ResolveTypeInput<T[number]>[]> & Required
     {
         return ArrayTemplate.fromTypes(...types) as any;
     }

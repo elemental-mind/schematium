@@ -1,6 +1,7 @@
 import { Debug } from "unitium";
 import * as assert from "node:assert";
-import { array, arrayOf, boolean, list, listOf, number, schema, string, type TemplateObject, valueOf, ValueTemplateAPI, ValueType } from "./templating.ts";
+import { array, arrayOf, boolean, list, listOf, number, object, schema, string, type TemplateObject, valueOf, ValueTemplateAPI, ValueType } from "./templating.ts";
+
 
 // Runtime access to validate/parseString — not on the public API type but present on instances.
 function withValidate(api: object): { validate(value: any): boolean; parseString(value: string): any; }
@@ -412,10 +413,9 @@ export class ArrayDefinitionTests
 
     withDefaultSetsDefault()
     {
-        const t = arrayOf(number).withDefault([1, 2, 3]);
-        const raw = t as any;
-        assert.deepStrictEqual(raw.default, [1, 2, 3]);
-        assert.strictEqual(raw.isOptional, true);
+        const t = arrayOf(number).withDefault([1, 2, 3]) as any;
+        assert.deepStrictEqual(t.default, [1, 2, 3]);
+        assert.strictEqual(t.isOptional, true);
     }
 
     parsesArrayFromJson()
@@ -437,9 +437,9 @@ export class DefaultValueTests
             name: string("Alice"),
             age: number(30),
             role: string(), // required — no default, not marked optional
-        });
+        }) as any;
 
-        assert.deepStrictEqual(t.default, { name: "Alice", age: 30 });
+        assert.deepStrictEqual(t.getDefault(), { name: "Alice", age: 30 });
     }
 
     objectAllChildrenOptionalWithDefaults()
@@ -447,9 +447,9 @@ export class DefaultValueTests
         const t = schema({
             x: number(10),
             y: number(20),
-        });
+        }) as any;
 
-        assert.deepStrictEqual(t.default, { x: 10, y: 20 });
+        assert.deepStrictEqual(t.getDefault(), { x: 10, y: 20 });
         // All children are optional (because they have defaults), so the object itself is optional
         assert.strictEqual(t.isOptional, true);
     }
@@ -459,9 +459,9 @@ export class DefaultValueTests
         const t = schema({
             a: string(),
             b: number(),
-        });
+        }) as any;
 
-        assert.strictEqual(t.default, undefined);
+        assert.strictEqual(t.getDefault(), undefined);
     }
 
     objectSingleChildWithDefault()
@@ -469,9 +469,9 @@ export class DefaultValueTests
         const t = schema({
             label: string("fallback"),
             value: number(),
-        });
+        }) as any;
 
-        assert.deepStrictEqual(t.default, { label: "fallback" });
+        assert.deepStrictEqual(t.getDefault(), { label: "fallback" });
     }
 
     // --------------------------------------------------
@@ -486,11 +486,10 @@ export class DefaultValueTests
                 port: number(8080),
             },
             debug: boolean(false),
-        });
+        }) as any;
 
-        const raw = t as any;
         // `config` has default { host: "localhost", port: 8080 } because both children have defaults
-        assert.deepStrictEqual(raw.default, { config: { host: "localhost", port: 8080 }, debug: false });
+        assert.deepStrictEqual(t.getDefault(), { config: { host: "localhost", port: 8080 }, debug: false });
     }
 
     nestedObjectSomeDefaults()
@@ -500,10 +499,10 @@ export class DefaultValueTests
                 inner1: string("default"),
                 inner2: number(), // required — no default
             },
-        });
+        }) as any;
 
         // Only inner1 has a default → outer's default is { inner1: "default" }
-        assert.deepStrictEqual(t.default, { outer: { inner1: "default" } });
+        assert.deepStrictEqual(t.getDefault(), { outer: { inner1: "default" } });
     }
 
     deepNestedObjectNoDefaults()
@@ -514,9 +513,9 @@ export class DefaultValueTests
                     value: string()
                 },
             },
-        });
+        }) as any;
 
-        assert.strictEqual(t.default, undefined);
+        assert.strictEqual(t.getDefault(), undefined);
     }
 
     deepNestedObjectWithDefaults()
@@ -529,9 +528,9 @@ export class DefaultValueTests
                     }
                 },
             },
-        });
+        }) as any;
 
-        assert.deepStrictEqual(t.default, { level1: { level2: { level3: { default: 123 } } } });
+        assert.deepStrictEqual(t.getDefault(), { level1: { level2: { level3: { default: 123 } } } });
     }
 
     // --------------------------------------------------
@@ -540,33 +539,224 @@ export class DefaultValueTests
 
     arrayWithDefault()
     {
-        const t = array([1, 2, 3]);
-        const raw = t as any;
-        assert.deepStrictEqual(raw.default, [1, 2, 3]);
-        assert.strictEqual(raw.isOptional, true);
+        const t = array([1, 2, 3]) as any;
+
+        assert.deepStrictEqual(t.getDefault(), [1, 2, 3]);
+        assert.strictEqual(t.isOptional, true);
     }
 
     listWithDefault()
     {
-        const t = list({ key: "value" });
-        const raw = t as any;
-        assert.deepStrictEqual(raw.default, { key: "value" });
-        assert.strictEqual(raw.isOptional, true);
+        const t = list({ key: "value" }) as any;
+        ;
+        assert.deepStrictEqual(t.getDefault(), { key: "value" });
+        assert.strictEqual(t.isOptional, true);
     }
-
     arrayOfHasNoDefault()
     {
-        const t = arrayOf(number);
-        const raw = t as any;
-        assert.strictEqual(raw.default, undefined);
-        assert.strictEqual(raw.isOptional, false);
+        const t = arrayOf(number) as any;
+
+        assert.strictEqual(t.getDefault(), undefined);
+        assert.strictEqual(t.isOptional, false);
     }
 
     listOfHasNoDefault()
     {
-        const t = listOf(string);
-        const raw = t as any;
-        assert.strictEqual(raw.default, undefined);
-        assert.strictEqual(raw.isOptional, false);
+        const t = listOf(string) as any;
+
+        assert.strictEqual(t.getDefault(), undefined);
+        assert.strictEqual(t.isOptional, false);
+    }
+}
+
+// ============================================================
+// getDefault — clone control via cloneDefaultOnAssignment
+// ============================================================
+
+export class DefaultCloneTests
+{
+    arrayByDefaultReturnsDeepClone()
+    {
+        const t = array([1, 2, 3]) as any;
+        const clone = t.getDefault();
+        assert.deepStrictEqual(clone, [1, 2, 3]);
+        assert.notStrictEqual(clone, t.default);
+        clone.push(4);
+        assert.deepStrictEqual(t.default, [1, 2, 3]);
+    }
+
+    arrayDisabledCloneReturnsReference()
+    {
+        const t = array([1, 2, 3], false) as any;
+        const result = t.getDefault();
+        assert.deepStrictEqual(result, [1, 2, 3]);
+        assert.strictEqual(result, t.default);
+        result.push(4);
+        assert.deepStrictEqual(t.default, [1, 2, 3, 4]);
+    }
+
+    listDefaultReturnsDeepClone()
+    {
+        const t = list({ key: "value" }) as any;
+        const clone = t.getDefault();
+        assert.deepStrictEqual(clone, { key: "value" });
+        assert.notStrictEqual(clone, t.default);
+        clone.key = "changed";
+        assert.deepStrictEqual(t.default, { key: "value" });
+    }
+
+    listDisabledCloneReturnsReference()
+    {
+        const t = list({ key: "value" }, false) as any;
+        const result = t.getDefault();
+        assert.deepStrictEqual(result, { key: "value" });
+        assert.strictEqual(result, t.default);
+        result.key = "changed";
+        assert.deepStrictEqual(t.default, { key: "changed" });
+    }
+
+    withDefaultCloneWhenAssignedTrueClonesDefault()
+    {
+        const defaults = [1, 2, 3];
+        const t = arrayOf(number).withDefault(defaults, true) as any;
+        const clone = t.getDefault();
+        assert.notStrictEqual(clone, defaults);
+    }
+
+    withDefaultCloneWhenAssignedFalseSharesDefault()
+    {
+        const defaults = [1, 2, 3];
+        const t = arrayOf(number).withDefault(defaults, false) as any;
+        const result = t.getDefault();
+        assert.strictEqual(result, defaults);
+    }
+
+    objectWithoutExplicitDefaultReturnsClone()
+    {
+        const t = schema({
+            items: array([1, 2, 3]),
+            label: string("test"),
+        }) as any;
+        const clone = t.getDefault();
+        const clone2 = t.getDefault();
+        assert.deepStrictEqual(clone, { items: [1, 2, 3], label: "test" });
+        assert.deepStrictEqual(clone2, { items: [1, 2, 3], label: "test" });
+        assert.notStrictEqual(clone, clone2);
+        assert.notStrictEqual(clone.items, clone2.items);
+    }
+
+    objectWithCloneDisabledMemberReturnsMemberDefaultReference()
+    {
+        const defaults = [1, 2, 3];
+        const t = schema({
+            items: array(defaults, false),
+            label: string("test"),
+        }) as any;
+        const result = t.getDefault();
+        assert.strictEqual(result.items, defaults);
+    }
+
+    nestedObjectWithSomeNonCloneMembers()
+    {
+        const sharedArray = [1, 2, 3];
+        const t = schema({
+            outer: object({
+                cloned: array([4, 5, 6]),
+                shared: array(sharedArray, false),
+            }),
+        }) as any;
+
+        const clone = t.getDefault();
+        assert.strictEqual(clone.outer.shared, sharedArray);
+    }
+
+    objectFactoryClonedWithDefaultByDefault()
+    {
+        const defaultObj = {
+            item: 123,
+            array: [1, 2, 3],
+            label: "test"
+        };
+
+        const t = object({
+            item: number(),
+            array: arrayOf(number),
+            label: string(),
+        }).withDefault(defaultObj) as any;
+
+        const defaults = t.getDefault();
+
+        assert.notStrictEqual(defaults, defaultObj);
+        assert.notStrictEqual(defaults.array, defaultObj.array);
+    }
+
+    objectFactoryCloneEnabledByDefault()
+    {
+        const defaultObj = {
+            item: 123,
+            array: [1, 2, 3],
+            label: "test"
+        };
+
+        const t = object({
+            item: number(),
+            array: arrayOf(number),
+            label: string(),
+        }).withDefault(defaultObj, false) as any;
+
+        const defaults = t.getDefault();
+
+        assert.strictEqual(defaults, defaultObj);
+        assert.strictEqual(defaults.array, defaultObj.array);
+    }
+
+    recursiveNonCloneInNestedObject()
+    {
+        const shared = [10, 20, 30];
+        const innerDefault = { data: shared, name: "foo" };
+
+        const t = object({
+            top: object({
+                inner: object({
+                    data: arrayOf(number),
+                    name: string(),
+                }).withDefault(innerDefault, false),
+                label: string("outer"),
+            }),
+            meta: string("root"),
+        }) as any;
+
+        const defaults = t.getDefault();
+
+        assert.strictEqual(defaults.top.inner, innerDefault);
+    }
+
+    mixedCloneLevelsPreserveNonCloneReferences()
+    {
+        const shared = [10, 20, 30];
+
+        const t = object({
+            top: object({
+                inner: object({
+                    data: array(shared, false),
+                    name: string(),
+                }),
+                label: string("outer"),
+            }),
+            meta: string("root"),
+        }) as any;
+
+        const defaults = t.getDefault();
+        assert.strictEqual(defaults.top.inner.data, shared);
+    }
+
+    // --------------------------------------------------
+    // undefined default
+    // --------------------------------------------------
+
+    getDefaultsCloneReturnsUndefinedWhenNoDefault()
+    {
+        const t = string() as any;
+        assert.strictEqual(t.getDefault(), undefined);
     }
 }
