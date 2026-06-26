@@ -38,6 +38,8 @@ type SetRequired<T, DefaultState extends boolean> =
 
 export interface ValueTemplateAPI<T>
 {
+    isOptional: boolean;
+    default?: T;
     validate(value: T): boolean;
     parseString(value: string): T;
 }
@@ -206,8 +208,8 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
         }
 
         readonly parsingPriority: number = 3;
+        public isOptional = false;
         public default?: T;
-        isOptional = false;
         protected customValidator?: (value: T) => boolean;
 
         get required(): any
@@ -339,6 +341,8 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
             if ([...this.template.values()].every(value => value.isOptional))
                 this.isOptional = true;
+
+            this.deriveDefaultValue();
         }
 
         parseString(value: string): T
@@ -367,6 +371,25 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
                     if (!this.template.has(key)) return false;
 
             return true;
+        }
+
+        private deriveDefaultValue()
+        {
+            const defaultChildren = new Array<[key: string, template: ValueTemplate<any>]>();
+
+            for (const entry of this.template)
+                //entry is [key, value], entry[1] hence the template of the entry.
+                if (entry[1].default !== undefined) defaultChildren.push(entry);
+
+            if (defaultChildren.length)
+            {
+                const defaultObject = {} as Record<string, any>;
+
+                for (const [key, value] of defaultChildren)
+                    defaultObject[key] = value.default;
+
+                this.default = defaultObject as T;
+            }
         }
     }
 
