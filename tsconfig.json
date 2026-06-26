@@ -7,11 +7,12 @@
     "strict": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "noEmit": true,
+    "rewriteRelativeImportExtensions": true,
     "allowImportingTsExtensions": true,
-    "isolatedModules": true,
-    "types": ["node"]
-  },
-  "include": ["source/**/*.ts"]
+    "sourceMap": false,
+    "declaration": true,
+    "types": ["node"],
+    "rootDir": "./source",
+    "outDir": "./distribution"
+  }
 }

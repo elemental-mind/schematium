@@ -1,10 +1,47 @@
 {
   "name": "schematium",
-  "version": "0.1.0",
-  "description": "Schema / templating library.",
+  "version": "0.5.0",
+  "description": "Type-safe schema / templating library for TypeScript — define, validate, and parse structured configurations with a fluent API.",
+  "license": "MIT",
   "type": "module",
+  "main": "./distribution/schematium.js",
+  "types": "./distribution/schematium.d.ts",
+  "exports": {
+    ".": {
+      "types": "./distribution/schematium.d.ts",
+      "import": "./distribution/schematium.js"
+    },
+    "./extensible": {
+      "types": "./distribution/schematium-extensible.d.ts",
+      "import": "./distribution/schematium-extensible.js"
+    }
+  },
+  "files": [
+    "distribution/"
+  ],
+  "keywords": [
+    "schema",
+    "templating",
+    "template",
+    "validation",
+    "type-safe",
+    "typescript",
+    "config",
+    "configuration",
+    "parser",
+    "fluent",
+    "typed"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/elemental-mind/schematium.git"
+  },
   "scripts": {
-    "test": "unitium-tsx"
+    "build": "node build.js",
+    "version:patch": "npm version patch",
+    "version:minor": "npm version minor",
+    "test": "unitium-tsx",
+    "publish:npm": "git push --follow-tags && npm run build && npm publish"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

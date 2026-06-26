@@ -1,0 +1,9 @@
+source/
+tsconfig.json
+tsconfig.build.json
+build.ts
+node_modules/
+.gitignore
+.npmignore
+*.spec.ts
+*.test.ts
