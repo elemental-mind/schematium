@@ -15,8 +15,8 @@ See this example:
 
 ```ts
 const template = schema({
-    name: string("anonymous"),              //Implicitly optional, due to default "anonymous"
-    age: number().accepts((n) => n >= 0),   //Implicitly required, no default provided 
+    name: string("anonymous"), // optional, due to default value "anonymous"
+    age: number().accepts((n) => n >= 0), // required, as no default provided
     role: oneOf("admin", "user"),
     variadicMember: valueOf(string, number, boolean).optional,
     permissions: listOf({
@@ -113,9 +113,9 @@ complementary interfaces**:
 
 In the definition API you have two distinct factory types to define your schema:
 
-- **Value-array factories infer type from supplied default value** They take
-  default values and infer the resulting type from them —
-  `oneOf("admin", "user")`, `array([1, 2, 3])`, `list({ alice: "admin" })`.
+- **Value-array factories** They take default values and infer the resulting
+  type from them — `oneOf("admin", "user")`, `array([1, 2, 3])`,
+  `list({ alice: "admin" })`.
 - **Type-array factories** take other template factories as type descriptors and
   have no value to fall back on — `valueOf(number, string)`,
   `arrayOf(number, string)`, `listOf(number, string)`. Note that we only pass
@@ -137,7 +137,7 @@ Schematium always returns a _fresh clone of the defaults_ when you call
   through `structuredClone` before returning it by default. If you'd like to
   return a shared default value, specify `false` as a second parameter to
   `withDefault()`
-- **You can share default values by reference** Despite the standard being a
+- **You can share default values by reference.** Despite the standard being a
   structured clone, when you supply `.withDefault(/* default value*/, false)` in
   the definition phase, Schematium will always inject a reference to this passed
   default in the tree produced by `.getDefault()`, instead of a clone.
