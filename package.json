@@ -1,6 +1,6 @@
 {
   "name": "schematium",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Type-safe schema / templating library for TypeScript — define, validate, and parse structured configurations with a fluent API.",
   "license": "MIT",
   "type": "module",
