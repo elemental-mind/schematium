@@ -1,15 +1,14 @@
 # Schematium
 
-> Type-safe schema & templating library for TypeScript — define, validate, and
-> parse structured configurations with a fluent API.
->
+Type-safe schema & templating library for TypeScript — define, validate, and
+parse structured configurations with a fluent API.
+
 > Think of it as a simpler, lighter (sub 1.5KB minizipped) alternative to Zod -
 > and one that's easier to extend.
 
 Schematium lets you describe the shape of structured data (configs, CLI args,
 JSON payloads, environment inputs…) once, and then validate and parse values
-against that shape with full type inference. The library targets TypeScript only
-— every template you build flows its concrete value type back into your code.
+against that shape with full type inference.
 
 See this example:
 
@@ -113,10 +112,10 @@ complementary interfaces**:
 
 In the definition API you have two distinct factory types to define your schema:
 
-- **Value-array factories** They take default values and infer the resulting
+- **Value-array factories** — They take default values and infer the resulting
   type from them — `oneOf("admin", "user")`, `array([1, 2, 3])`,
   `list({ alice: "admin" })`.
-- **Type-array factories** take other template factories as type descriptors and
+- **Type-array factories** — They take other template factories as type descriptors and
   have no value to fall back on — `valueOf(number, string)`,
   `arrayOf(number, string)`, `listOf(number, string)`. Note that we only pass
   the functions, _we do not invoke the factories_. These are always required; if
