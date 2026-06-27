@@ -7,7 +7,6 @@ export type {
     OptionalityDefinitionAPI,
     ValueDefinitionAPI,
     CollectionDefinitionAPI,
-    TypedCollectionDefinitionAPI,
     TemplateObject,
     TemplateObjectEntry,
     ValueConfiguration,
