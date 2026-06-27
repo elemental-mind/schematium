@@ -14,16 +14,18 @@ against that shape with full type inference. The library targets TypeScript only
 See this example:
 
 ```ts
-schema({
-    name: string("anonymous"),
-    age: number().required.accepts((n) => n >= 0),
+const template = schema({
+    name: string("anonymous"),              //Implicitly optional, due to default "anonymous"
+    age: number().accepts((n) => n >= 0),   //Implicitly required, no default provided 
     role: oneOf("admin", "user"),
     variadicMember: valueOf(string, number, boolean).optional,
     permissions: listOf({
         domain: string(),
         granted: arrayOf(oneOf("read", "write", "delete")),
     }).withDefault({}),
-}).validate(
+});
+
+template.validate(
     { age: 35, role: "admin" }, // → true
 );
 ```
