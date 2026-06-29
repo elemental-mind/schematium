@@ -2,18 +2,18 @@ type PrimitiveTemplate = typeof number | typeof string | typeof boolean;
 type PrimitiveString = "string" | "boolean" | "number";
 
 type TypeOption = PrimitiveTemplate | TemplateObject | ValueTemplateAPI<any>;
-type ResolveTypeInput<T extends TypeOption> =
+export type InferTypeDefinitionType<T extends TypeOption> =
     T extends typeof number ? number :
     T extends typeof string ? string :
     T extends typeof boolean ? boolean :
-    T extends TemplateObject ? Concrete<T> :
-    T extends Array<infer E extends TypeOption> ? ResolveTypeInput<E> :
+    T extends TemplateObject ? InferSchemaType<T> :
+    T extends Array<infer E extends TypeOption> ? InferTypeDefinitionType<E> :
     never;
 
-type Concrete<T extends TemplateObject> = {
+export type InferSchemaType<T extends TemplateObject> = {
     [K in keyof T]:
     T[K] extends ValueConfiguration<infer V> ? T[K] extends Required ? Exclude<V, undefined> : V | undefined :
-    T[K] extends TemplateObject ? Concrete<T[K]>
+    T[K] extends TemplateObject ? InferSchemaType<T[K]>
     : never
 };
 
@@ -97,7 +97,7 @@ export interface TemplatingAPI<
 >
 {
     templating: {
-        schema<T extends TemplateObject>(inputSchema: T): ValueTemplateAPI<Concrete<T>> & TemplateExt;
+        schema<T extends TemplateObject>(inputSchema: T): ValueTemplateAPI<InferSchemaType<T>> & TemplateExt;
     },
     primitives: {
         string(): ValueDefinitionAPI<string> & DefaultDefitionAPI<string> & PrimitiveExt & Required;
@@ -106,17 +106,17 @@ export interface TemplatingAPI<
         number(defaultValue: number): ValueDefinitionAPI<number> & PrimitiveExt & Optional;
         boolean(): ValueDefinitionAPI<boolean> & DefaultDefitionAPI<boolean> & PrimitiveExt & Required;
         boolean(defaultValue: boolean): ValueDefinitionAPI<boolean> & PrimitiveExt & Optional;
-        object<T extends TemplateObject>(value: T): ValueDefinitionAPI<Concrete<T>> & DefaultDefitionAPI<Concrete<T>> & PrimitiveExt & Required;
+        object<T extends TemplateObject>(value: T): ValueDefinitionAPI<InferSchemaType<T>> & DefaultDefitionAPI<InferSchemaType<T>> & PrimitiveExt & Required;
     },
     variadics: {
-        valueOf<T extends TypeOption[]>(...types: T): ValueDefinitionAPI<ResolveTypeInput<T[number]>> & DefaultDefitionAPI<T[number]> & VariadicExt & Required;
+        valueOf<T extends TypeOption[]>(...types: T): ValueDefinitionAPI<InferTypeDefinitionType<T[number]>> & DefaultDefitionAPI<T[number]> & VariadicExt & Required;
         oneOf<T extends string | number>(...possibleValues: T[]): OptionalityDefinitionAPI<T> & DefaultDefitionAPI<T> & VariadicExt & Required;
     },
     collections: {
         list<T>(defaultValue: Record<string, T>, cloneOnDefaultAssignment?: boolean): CollectionDefinitionAPI<Record<string, T>> & CollectionExt & Optional;
-        listOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<Record<string, ResolveTypeInput<T[number]>>> & DefaultDefitionAPI<Record<string, ResolveTypeInput<T[number]>>> & CollectionExt & Required;
+        listOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & DefaultDefitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & CollectionExt & Required;
         array<T>(defaultValue: T[], cloneOnDefaultAssignment?: boolean): CollectionDefinitionAPI<T[]> & CollectionExt & Optional;
-        arrayOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<ResolveTypeInput<T[number]>[]> & DefaultDefitionAPI<ResolveTypeInput<T[number]>[]> & CollectionExt & Required;
+        arrayOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & DefaultDefitionAPI<InferTypeDefinitionType<T[number]>[]> & CollectionExt & Required;
     },
 }
 
@@ -443,7 +443,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
         static fromTypes<T extends TypeOption[]>(...types: T)
         {
             const elementType = ValueTemplate.fromTypeInputs(...types);
-            return new ListTemplate<ResolveTypeInput<T[number]>>(elementType);
+            return new ListTemplate<InferTypeDefinitionType<T[number]>>(elementType);
         }
 
         protected entryGuard(key: string, value: any)
@@ -488,10 +488,10 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return new ArrayTemplate<any>(elementType);
         }
 
-        static fromTypes<T extends TypeOption[]>(...types: T): ArrayTemplate<ResolveTypeInput<T[number]>>
+        static fromTypes<T extends TypeOption[]>(...types: T): ArrayTemplate<InferTypeDefinitionType<T[number]>>
         {
             const elementType = ValueTemplate.fromTypeInputs(...types);
-            return new ArrayTemplate<ResolveTypeInput<T[number]>>(elementType);
+            return new ArrayTemplate<InferTypeDefinitionType<T[number]>>(elementType);
         }
 
         protected entryGuard(value: any)
@@ -558,7 +558,7 @@ export function GenerateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args
         return defaultValue !== undefined ? new BooleanTemplate().withDefault(defaultValue) : new BooleanTemplate();
     }
 
-    function valueOf<T extends TypeOption[]>(...types: T): ValueDefinitionAPI<ResolveTypeInput<T[number]>> & Required
+    function valueOf<T extends TypeOption[]>(...types: T): ValueDefinitionAPI<InferTypeDefinitionType<T[number]>> & Required
     {
         return ValueTemplate.fromTypeInputs(...types) as any;
     }
@@ -569,7 +569,7 @@ export function GenerateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args
         return ValueTemplate.fromExamples(...possibleValues).accepts(value => valueSet.has(value)) as any;
     }
 
-    function object<T extends TemplateObject>(value: T): ValueDefinitionAPI<Concrete<T>> & Required
+    function object<T extends TemplateObject>(value: T): ValueDefinitionAPI<InferSchemaType<T>> & Required
     {
         return ObjectTemplate.fromTemplateObject(value) as any;
     }
@@ -579,7 +579,7 @@ export function GenerateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args
         return ListTemplate.fromExample<T>(defaultValue).withDefault(defaultValue, cloneOnDefaultAssignment);
     }
 
-    function listOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<Record<string, ResolveTypeInput<T[number]>>> & Required
+    function listOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & Required
     {
         return ListTemplate.fromTypes(...types) as any;
     }
@@ -589,7 +589,7 @@ export function GenerateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args
         return ArrayTemplate.fromExample(defaultValue).withDefault(defaultValue, cloneOnDefaultAssignment);
     }
 
-    function arrayOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<ResolveTypeInput<T[number]>[]> & Required
+    function arrayOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & Required
     {
         return ArrayTemplate.fromTypes(...types) as any;
     }

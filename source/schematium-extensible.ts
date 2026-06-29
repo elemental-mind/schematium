@@ -9,6 +9,8 @@ export type {
     CollectionDefinitionAPI,
     TemplateObject,
     TemplateObjectEntry,
+    InferSchemaType,
+    InferTypeDefinitionType,
     ValueConfiguration,
     EntryValidationClosure,
     TemplatingAPI,
