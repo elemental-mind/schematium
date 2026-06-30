@@ -39,9 +39,15 @@ type SetRequired<T, DefaultState extends boolean> =
 export interface ValueTemplateAPI<T>
 {
     isOptional: boolean;
-    validate(value: T): boolean;
-    parseString(value: string): T;
+    validate(value: T, allowPartial?: boolean, allowUnknowns?: boolean): boolean;
+    parseString(value: string, allowPartial?: boolean, allowUnknowns?: boolean): T;
     getDefault(): T | undefined;
+}
+
+export interface ValidationOptions
+{
+    allowPartial?: boolean;
+    allowUnknowns?: boolean;
 }
 
 export type ValueType<ThisType> = ThisType extends DefinitionAPI<infer T> ? T : never;
@@ -245,12 +251,12 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return this;
         }
 
-        abstract parseString(value: string): T;
+        abstract parseString(value: string, allowPartial?: boolean, allowUnknowns?: boolean): T;
 
-        validate(value: T): boolean
+        validate(value: T, allowPartial = false, allowUnknowns = false): boolean
         {
             if (value === undefined && this.isOptional) return true;
-            if (!this.validateType(value)) return false;
+            if (!this.validateType(value, allowPartial, allowUnknowns)) return false;
             return this.customValidator?.(value as T) ?? true;
         }
 
@@ -259,7 +265,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return this.cloneDefaultWhenDefaultRequested ? structuredClone(this.default) : this.default;
         }
 
-        abstract validateType(value: T): boolean;
+        abstract validateType(value: T, allowPartial?: boolean, allowUnknowns?: boolean): boolean;
     }
 
     class StringTemplate extends ValueTemplate<string>
@@ -311,24 +317,24 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             this.permittedTypes.sort((a, b) => a.parsingPriority - b.parsingPriority);
         }
 
-        parseString(valueString: string): T
+        parseString(valueString: string, allowPartial?: boolean, allowUnknowns?: boolean): T
         {
             for (const permittedType of this.permittedTypes)
             {
                 try
                 {
-                    const value = permittedType.parseString(valueString);
-                    if (permittedType.validate(value)) return value;
+                    const value = permittedType.parseString(valueString, allowPartial, allowUnknowns);
+                    if (permittedType.validate(value, allowPartial, allowUnknowns)) return value;
                 }
                 catch (e) { continue; }
             }
             throw new Error("Could not match input to any possible type");
         }
 
-        validateType(value: unknown): boolean
+        validateType(value: unknown, allowPartial?: boolean, allowUnknowns?: boolean): boolean
         {
             for (const permittedType of this.permittedTypes)
-                if (permittedType.validate(value)) return true;
+                if (permittedType.validate(value, allowPartial, allowUnknowns)) return true;
             return false;
         }
     }
@@ -375,10 +381,11 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
         parseString(value: string): T
         {
+            //We expect well formatted JSON, so we do not need to walk the whole object to correct values like a string "true" to boolean true
             return JSON.parse(value);
         }
 
-        validateType(value: T): boolean
+        validateType(value: T, allowPartial?: boolean, allowUnknowns?: boolean): boolean
         {
             if (typeof value !== "object" || value === null)
                 return false;
@@ -388,13 +395,16 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             for (const [key, template] of this.template.entries())
             {
                 const value = input[key];
-                if (value === undefined && !template.isOptional)
-                    return false;
-                else if (value !== undefined && !template.validate(value))
+                if (value === undefined)
+                {
+                    if (!template.isOptional && !allowPartial)
+                        return false;
+                }
+                else if (!template.validate(value, allowPartial, allowUnknowns))
                     return false;
             }
 
-            if (this.strict)
+            if (!allowUnknowns && this.strict)
                 for (const key of Object.keys(input))
                     if (!this.template.has(key)) return false;
 
@@ -465,18 +475,18 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return parsed as Record<string, T>;
         }
 
-        validateType(value: Record<string, T>): boolean
+        validateType(value: Record<string, T>, allowPartial?: boolean, allowUnknowns?: boolean): boolean
         {
             if (typeof value !== "object" || value === null || Array.isArray(value))
                 return false;
             for (const [key, entry] of Object.entries(value))
-                if (!this.validateEntry(key, entry)) return false;
+                if (!this.validateEntry(key, entry, allowPartial, allowUnknowns)) return false;
             return true;
         }
 
-        protected validateEntry(key: string, entry: any): boolean
+        protected validateEntry(key: string, entry: any, allowPartial?: boolean, allowUnknowns?: boolean): boolean
         {
-            return this.entryTemplate.validate(entry) && this.entryGuard(key, entry);
+            return this.entryTemplate.validate(entry, allowPartial, allowUnknowns) && this.entryGuard(key, entry);
         }
     }
 
@@ -507,27 +517,24 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
         parseString(value: string): T[]
         {
-            // TODO first draft: JSON-only parser. A follow-up should also accept
-            // `value,value,value` style input and coerce each entry through
-            // `entryShape` when an entry shape is provided.
             const parsed = JSON.parse(value);
             if (!Array.isArray(parsed))
                 throw new Error(`Cannot parse "${value}" as array`);
             return parsed as T[];
         }
 
-        validateType(value: T[]): boolean
+        validateType(value: T[], allowPartial?: boolean, allowUnknowns?: boolean): boolean
         {
             if (!Array.isArray(value))
                 return false;
             for (const entry of value)
-                if (!this.validateEntry(entry)) return false;
+                if (!this.validateEntry(entry, allowPartial, allowUnknowns)) return false;
             return true;
         }
 
-        protected validateEntry(entry: any): boolean
+        protected validateEntry(entry: any, allowPartial?: boolean, allowUnknowns?: boolean): boolean
         {
-            return this.entryTemplate.validate(entry) && this.entryGuard(entry);
+            return this.entryTemplate.validate(entry, allowPartial, allowUnknowns) && this.entryGuard(entry);
         }
     }
 

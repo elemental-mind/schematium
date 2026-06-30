@@ -4,7 +4,7 @@ import { array, arrayOf, boolean, list, listOf, number, object, schema, string, 
 
 
 // Runtime access to validate/parseString — not on the public API type but present on instances.
-function withValidate(api: object): { validate(value: any): boolean; parseString(value: string): any; }
+function withValidate(api: object): { validate(value: any, allowPartial?: boolean, allowUnknowns?: boolean): boolean; parseString(value: string, allowPartial?: boolean, allowUnknowns?: boolean): any; }
 {
     return api as any;
 }
@@ -212,6 +212,170 @@ export class VariadicDefinitionTests
 
 export class ObjectDefinitionTests
 {
+    // --------------------------------------------------
+    // Partial / superfluous member validation
+    // --------------------------------------------------
+
+    allowPartialLetsMissingRequiredMembersPass()
+    {
+        const t = schema({
+            required: string(),
+            optional: string("default"),
+        });
+        const template = withValidate(t);
+
+        // Without allowPartial, missing required field fails
+        assert.strictEqual(template.validate({ optional: "x" }), false);
+        // With allowPartial, missing required field passes
+        assert.strictEqual(template.validate({ optional: "x" }, true), true);
+    }
+
+    allowUnknownsLetsExtraMembersPass()
+    {
+        const t = schema({
+            known: string(),
+        });
+        const template = withValidate(t);
+
+        // Without allowUnknowns, extra field fails
+        assert.strictEqual(template.validate({ known: "ok", unknown: "extra" }), false);
+        // With allowUnknowns, extra field passes
+        assert.strictEqual(template.validate({ known: "ok", unknown: "extra" }, false, true), true);
+    }
+
+    allowPartialAndAllowUnknownsWorkTogether()
+    {
+        const t = schema({
+            required: number(),
+        });
+        const template = withValidate(t);
+
+        // Missing required field + extra field — both flags needed
+        assert.strictEqual(template.validate({ extra: "x" }, true, true), true);
+    }
+
+    allowPartialWithOptionalMembersStillWorks()
+    {
+        const t = schema({
+            required: string(),
+            optional: number(42),
+        });
+        const template = withValidate(t);
+
+        assert.strictEqual(template.validate({ optional: 123 }), false);
+        // Missing optional field is fine regardless
+        assert.strictEqual(template.validate({ optional: 123 }, true), true);
+    }
+
+    allowPartialPropagatesToNestedObjects()
+    {
+        const t = schema({
+            nested: {
+                innerRequired: number(),
+            },
+        });
+        const template = withValidate(t);
+
+        assert.strictEqual(template.validate({}, true), true);
+        assert.strictEqual(template.validate({ nested: {} }, true), true);
+    }
+
+    allowUnknownsPropagatesToNestedObjects()
+    {
+        const t = schema({
+            nested: {
+                a: string(),
+            },
+        });
+        const template = withValidate(t);
+
+        // Top-level allowUnknowns should also propagate to nested
+        assert.strictEqual(template.validate({ nested: { a: "ok", extra: true } }, false, true), true);
+    }
+
+    allowPartialDoesNotSkipTypeCheckForPresentMembers()
+    {
+        const t = schema({
+            name: string(),
+            count: number(),
+        });
+        const template = withValidate(t);
+
+        // With allowPartial, a wrong type on a present member still fails
+        assert.strictEqual(template.validate({ name: "hello", count: "not-a-number" }, true), false);
+    }
+
+    allowUnknownsDoesNotSkipTypeCheckForKnownMembers()
+    {
+        const t = schema({
+            name: string(),
+        });
+        const template = withValidate(t);
+
+        // With allowUnknowns, a wrong type on a known member still fails
+        assert.strictEqual(template.validate({ name: 42, extra: "surplus" }, false, true), false);
+    }
+
+    bothFlagsDoNotMaskTypeMismatchOnRequiredFields()
+    {
+        const t = schema({
+            required: number(),
+            optional: string("default"),
+        });
+        const template = withValidate(t);
+
+        // Even with both flags, type errors are still rejected
+        assert.strictEqual(template.validate({ required: "string", optional: "x" }, true, true), false);
+    }
+
+    bothFlagsDoNotMaskTypeMismatchInNestedObjects()
+    {
+        const t = schema({
+            nested: {
+                value: number(),
+            },
+        });
+        const template = withValidate(t);
+
+        // Both flags propagate to nested — type mismatch still fails
+        assert.strictEqual(template.validate({ nested: { value: "wrong-type" } }, true, true), false);
+    }
+
+    bothFlagsDoNotMaskTypeMismatchInLists()
+    {
+        const t = schema({
+            items: listOf(number),
+        });
+        const template = withValidate(t);
+
+        // Type mismatch on list entries still fails
+        assert.strictEqual(template.validate({ items: { a: "not-a-number" } }, true, true), false);
+    }
+
+    bothFlagsDoNotMaskTypeMismatchInArrays()
+    {
+        const t = schema({
+            items: arrayOf(number),
+        });
+        const template = withValidate(t);
+
+        // Type mismatch on array entries still fails
+        assert.strictEqual(template.validate({ items: ["not-a-number"] }, true, true), false);
+    }
+
+    allowPartialKeepsCustomValidatorActive()
+    {
+        const t = schema({
+            value: number().accepts(v => v > 0),
+        });
+        const template = withValidate(t);
+
+        // allowPartial still runs custom validators
+        assert.strictEqual(template.validate({}, true), true);
+        assert.strictEqual(template.validate({ value: -1 }, true), false);
+        assert.strictEqual(template.validate({ value: 5 }, true), true);
+    }
+
     validatesValidConcreteObject()
     {
         const t = schema(SampleTemplate);
