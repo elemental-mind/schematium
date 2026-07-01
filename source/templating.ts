@@ -1,3 +1,7 @@
+//------------------------------------------------
+// Types & Interfaces
+//------------------------------------------------
+
 type PrimitiveTemplate = typeof number | typeof string | typeof boolean;
 type PrimitiveString = "string" | "boolean" | "number";
 
@@ -18,11 +22,22 @@ export type InferSchemaType<T extends TemplateObject> = {
 };
 
 export type ParseResult<T> =
-    | { success: true; value: T }
-    | { success: false; error: string };
+    | { success: true; value: T; }
+    | { success: false; error: string; };
 
-export function ParseSuccess<T>(value: T): ParseResult<T> { return { success: true, value }; }
-export function ParseFailure<T = never>(error: string): ParseResult<T> { return { success: false, error }; }
+interface ValidationToleranceSettings
+{
+    //allowPartial enables checking only partial objects, that don't have all required keys. It only checks types of known keys, not if all required keys are present. Defaults to false. 
+    allowPartial?: boolean;
+    //allowUnknowns ignores keys that are not defined in the schema and lets objects pass that have more keys than defined in the schema. Defaults to false.
+    allowUnknowns?: boolean;
+}
+
+export interface ValidationSettings extends ValidationToleranceSettings
+{
+    //fast validation fails on the first wrong validation, defaults to true
+    fast?: boolean;
+}
 
 declare const required: unique symbol;
 declare const forceRequired: unique symbol;
@@ -124,6 +139,17 @@ export interface TemplatingAPI<
         arrayOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & DefaultDefitionAPI<InferTypeDefinitionType<T[number]>[]> & CollectionExt & Required;
     },
 }
+
+//------------------------------------------------
+// Utility Functions
+//------------------------------------------------
+
+function ParseSuccess<T>(value: T): ParseResult<T> { return { success: true, value }; }
+function ParseFailure<T = never>(error: string): ParseResult<T> { return { success: false, error }; }
+
+//------------------------------------------------
+// Templating Classes
+//------------------------------------------------
 
 function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Object)
 {
@@ -236,6 +262,11 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return this.default !== undefined;
         }
 
+        protected get typeLabel(): string
+        {
+            return this.constructor.name.replace(/Template$/, '').toLowerCase();
+        }
+
         accepts(validator: (value: T) => boolean): any
         {
             this.customValidator = validator;
@@ -250,7 +281,25 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return this;
         }
 
-        abstract parseString(value: string, settings?: ValidationToleranceSettings): ParseResult<T>;
+        parseString(value: string, settings?: ValidationToleranceSettings): ParseResult<T>
+        {
+            const parsed = this.parseRaw(value);
+            if (parsed === undefined)
+                return ParseFailure(`Cannot parse "${value}" as ${this.typeLabel}`);
+
+            if (!this.check(parsed as T, settings))
+                return ParseFailure(`Parsed value does not satisfy ${this.typeLabel} schema`);
+
+            return ParseSuccess(parsed as T);
+        }
+
+        protected abstract parseRaw(value: string): T | undefined;
+
+        protected parseJSON(value: string): T | undefined
+        {
+            try { return JSON.parse(value); }
+            catch { return undefined; }
+        }
 
         check(value: T, settings?: ValidationToleranceSettings): boolean
         {
@@ -281,7 +330,6 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return context;
         }
 
-
         abstract validateType(value: T, context: ValidationContext): ValidationContext;
 
         getDefault()
@@ -294,7 +342,10 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
     {
         readonly parsingPriority: number = 4;
 
-        parseString(value: string): ParseResult<string> { return ParseSuccess(value); }
+        protected parseRaw(value: string)
+        {
+            return value;
+        }
 
         validateType(value: unknown, context: ValidationContext)
         {
@@ -306,12 +357,11 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
     {
         readonly parsingPriority: number = 0;
 
-        parseString(value: string): ParseResult<number>
+        protected parseRaw(value: string)
         {
+            if (value.trim() === "") return undefined;
             const parsed = Number(value);
-            if (!Number.isFinite(parsed) || value.trim() === "")
-                return ParseFailure(`Cannot parse "${value}" as number`);
-            return ParseSuccess(parsed);
+            return Number.isFinite(parsed) ? parsed : undefined;
         }
 
         validateType(value: unknown, context: ValidationContext)
@@ -324,12 +374,12 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
     {
         readonly parsingPriority: number = 1;
 
-        parseString(value: string): ParseResult<boolean>
+        protected parseRaw(value: string)
         {
             const lowered = value.trim().toLowerCase();
-            if (lowered === "true" || lowered === "1") return ParseSuccess(true);
-            if (lowered === "false" || lowered === "0") return ParseSuccess(false);
-            return ParseFailure(`Cannot parse "${value}" as boolean`);
+            if (lowered === "true" || lowered === "1") return true;
+            if (lowered === "false" || lowered === "0") return false;
+            return undefined;
         }
 
         validateType(value: unknown, context: ValidationContext)
@@ -354,7 +404,6 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             this.permittedTypes.sort((a, b) => a.parsingPriority - b.parsingPriority);
         }
 
-
         parseString(valueString: string, settings?: ValidationToleranceSettings): ParseResult<T>
         {
             for (const permittedType of this.permittedTypes)
@@ -364,6 +413,12 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
                     return result as ParseResult<T>;
             }
             return ParseFailure("Could not match input to any possible type");
+        }
+
+        // parseString is a full override (try each candidate type), so parseRaw is never called
+        protected parseRaw(value: string)
+        {
+            return undefined;
         }
 
         validateType(value: unknown, context: ValidationContext)
@@ -423,16 +478,9 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return this.default !== undefined || this.membersWithDefaultValues.size !== 0;
         }
 
-        parseString(value: string): ParseResult<T>
+        protected parseRaw(value: string)
         {
-            let parsed: unknown;
-            try { parsed = JSON.parse(value); }
-            catch { return ParseFailure(`"${value}" is not valid JSON`); }
-
-            if (!this.check(parsed as T, {}))
-                return ParseFailure("Parsed value does not match schema");
-
-            return ParseSuccess(parsed as T);
+            return this.parseJSON(value);
         }
 
         validateType(value: T, context: ValidationContext)
@@ -525,17 +573,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return new ListTemplate<InferTypeDefinitionType<T[number]>>(elementType);
         }
 
-        parseString(value: string): ParseResult<Record<string, T>>
-        {
-            let parsed: unknown;
-            try { parsed = JSON.parse(value); }
-            catch { return ParseFailure(`"${value}" is not valid JSON`); }
-
-            if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
-                return ParseFailure(`Cannot parse "${value}" as list`);
-
-            return ParseSuccess(parsed as Record<string, T>);
-        }
+        protected parseRaw(value: string): Record<string, T> | undefined { return this.parseJSON(value); }
 
         validateType(value: Record<string, T>, context: ValidationContext)
         {
@@ -563,17 +601,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return new ArrayTemplate<InferTypeDefinitionType<T[number]>>(elementType);
         }
 
-        parseString(value: string): ParseResult<T[]>
-        {
-            let parsed: unknown;
-            try { parsed = JSON.parse(value); }
-            catch { return ParseFailure(`"${value}" is not valid JSON`); }
-
-            if (!Array.isArray(parsed))
-                return ParseFailure(`Cannot parse "${value}" as array`);
-
-            return ParseSuccess(parsed as T[]);
-        }
+        protected parseRaw(value: string): T[] | undefined { return this.parseJSON(value); }
 
         validateType(value: T[], context: ValidationContext)
         {
@@ -590,87 +618,9 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
     return { ValueTemplate, StringTemplate, NumberTemplate, BooleanTemplate, VariadicTemplate, ObjectTemplate, CollectionTemplate, ListTemplate, ArrayTemplate } as const;
 }
 
-export function GenerateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args: any[]) => any = Object)
-{
-    const { ValueTemplate, StringTemplate, NumberTemplate, BooleanTemplate, VariadicTemplate, ObjectTemplate, CollectionTemplate, ListTemplate, ArrayTemplate } = generateTemplatingClasses(BaseClass);
-
-    function schema(inputSchema: TemplateObject)
-    {
-        return ObjectTemplate.fromTemplateObject(inputSchema);
-    }
-
-    function string(defaultValue?: string): any
-    {
-        return defaultValue !== undefined ? new StringTemplate().withDefault(defaultValue) : new StringTemplate();
-    }
-
-    function number(defaultValue?: number): any
-    {
-        return defaultValue !== undefined ? new NumberTemplate().withDefault(defaultValue) : new NumberTemplate();
-    }
-
-    function boolean(defaultValue?: boolean): any
-    {
-        return defaultValue !== undefined ? new BooleanTemplate().withDefault(defaultValue) : new BooleanTemplate();
-    }
-
-    function valueOf<T extends TypeOption[]>(...types: T): ValueDefinitionAPI<InferTypeDefinitionType<T[number]>> & Required
-    {
-        return ValueTemplate.fromTypeInputs(...types) as any;
-    }
-
-    function oneOf<T extends string | number>(...possibleValues: T[]): OptionalityDefinitionAPI<T> & Required
-    {
-        const valueSet = new Set(possibleValues);
-        return ValueTemplate.fromExamples(...possibleValues).accepts(value => valueSet.has(value)) as any;
-    }
-
-    function object<T extends TemplateObject>(value: T): ValueDefinitionAPI<InferSchemaType<T>> & Required
-    {
-        return ObjectTemplate.fromTemplateObject(value) as any;
-    }
-
-    function list<T>(defaultValue: Record<string, T>, cloneOnDefaultAssignment: boolean = true): CollectionDefinitionAPI<Record<string, T>> & Optional
-    {
-        return ListTemplate.fromExample<T>(defaultValue).withDefault(defaultValue, cloneOnDefaultAssignment);
-    }
-
-    function listOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & Required
-    {
-        return ListTemplate.fromTypes(...types) as any;
-    }
-
-    function array<T>(defaultValue: T[], cloneOnDefaultAssignment = true): CollectionDefinitionAPI<T[]> & Optional
-    {
-        return ArrayTemplate.fromExample(defaultValue).withDefault(defaultValue, cloneOnDefaultAssignment);
-    }
-
-    function arrayOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & Required
-    {
-        return ArrayTemplate.fromTypes(...types) as any;
-    }
-
-    return {
-        templating: { schema },
-        primitives: { string, number, boolean, object },
-        variadics: { valueOf, oneOf },
-        collections: { list, listOf, array, arrayOf }
-    } as T;
-}
-
-interface ValidationToleranceSettings
-{
-    //allowPartial enables checking only partial objects, that don't have all required keys. It only checks types of known keys, not if all required keys are present. Defaults to false. 
-    allowPartial?: boolean;
-    //allowUnknowns ignores keys that are not defined in the schema and lets objects pass that have more keys than defined in the schema. Defaults to false.
-    allowUnknowns?: boolean;
-}
-
-export interface ValidationSettings extends ValidationToleranceSettings
-{
-    //fast validation fails on the first wrong validation, defaults to true
-    fast?: boolean;
-}
+//------------------------------------------------
+// Validation Classes
+//------------------------------------------------
 
 abstract class ValidationContext
 {
@@ -712,7 +662,7 @@ abstract class ValidationContext
     adoptSettings(contextOrSettings: ValidationToleranceSettings)
     {
         this.allowPartial = contextOrSettings.allowPartial ?? false;
-        this.allowUnknowns = contextOrSettings.allowPartial ?? false;;
+        this.allowUnknowns = contextOrSettings.allowUnknowns ?? false;
     }
 
     refresh()
@@ -794,6 +744,10 @@ export class ValidationResult
     }
 }
 
+//------------------------------------------------
+// Validation Errors
+//------------------------------------------------
+
 export class ValidationError
 {
     static None = Object.freeze(new ValidationError());
@@ -807,29 +761,83 @@ export class ValidationError
     }
 }
 
-class TypeMismatch extends ValidationError
+class TypeMismatch extends ValidationError { }
+class MissingMember extends ValidationError { }
+class UnknownMember extends ValidationError { }
+class UnknownValue extends ValidationError { }
+class UndefinedValue extends ValidationError { }
+
+
+//------------------------------------------------
+// Templating API Functions
+//------------------------------------------------
+
+export function GenerateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args: any[]) => any = Object)
 {
+    const { ValueTemplate, StringTemplate, NumberTemplate, BooleanTemplate, VariadicTemplate, ObjectTemplate, CollectionTemplate, ListTemplate, ArrayTemplate } = generateTemplatingClasses(BaseClass);
 
-}
+    function schema(inputSchema: TemplateObject)
+    {
+        return ObjectTemplate.fromTemplateObject(inputSchema);
+    }
 
-class MissingMember extends ValidationError
-{
+    function string(defaultValue?: string): any
+    {
+        return defaultValue !== undefined ? new StringTemplate().withDefault(defaultValue) : new StringTemplate();
+    }
 
-}
+    function number(defaultValue?: number): any
+    {
+        return defaultValue !== undefined ? new NumberTemplate().withDefault(defaultValue) : new NumberTemplate();
+    }
 
-class UnknownMember extends ValidationError
-{
+    function boolean(defaultValue?: boolean): any
+    {
+        return defaultValue !== undefined ? new BooleanTemplate().withDefault(defaultValue) : new BooleanTemplate();
+    }
 
-}
+    function valueOf<T extends TypeOption[]>(...types: T): ValueDefinitionAPI<InferTypeDefinitionType<T[number]>> & Required
+    {
+        return ValueTemplate.fromTypeInputs(...types) as any;
+    }
 
-class UnknownValue extends ValidationError
-{
+    function oneOf<T extends string | number>(...possibleValues: T[]): OptionalityDefinitionAPI<T> & Required
+    {
+        const valueSet = new Set(possibleValues);
+        return ValueTemplate.fromExamples(...possibleValues).accepts(value => valueSet.has(value)) as any;
+    }
 
-}
+    function object<T extends TemplateObject>(value: T): ValueDefinitionAPI<InferSchemaType<T>> & Required
+    {
+        return ObjectTemplate.fromTemplateObject(value) as any;
+    }
 
-class UndefinedValue extends ValidationError
-{
+    function list<T>(defaultValue: Record<string, T>, cloneOnDefaultAssignment: boolean = true): CollectionDefinitionAPI<Record<string, T>> & Optional
+    {
+        return ListTemplate.fromExample<T>(defaultValue).withDefault(defaultValue, cloneOnDefaultAssignment);
+    }
 
+    function listOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & Required
+    {
+        return ListTemplate.fromTypes(...types) as any;
+    }
+
+    function array<T>(defaultValue: T[], cloneOnDefaultAssignment = true): CollectionDefinitionAPI<T[]> & Optional
+    {
+        return ArrayTemplate.fromExample(defaultValue).withDefault(defaultValue, cloneOnDefaultAssignment);
+    }
+
+    function arrayOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & Required
+    {
+        return ArrayTemplate.fromTypes(...types) as any;
+    }
+
+    return {
+        templating: { schema },
+        primitives: { string, number, boolean, object },
+        variadics: { valueOf, oneOf },
+        collections: { list, listOf, array, arrayOf }
+    } as T;
 }
 
 const defaultAPI = GenerateTemplatingAPI();
