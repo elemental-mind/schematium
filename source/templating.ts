@@ -17,6 +17,13 @@ export type InferSchemaType<T extends TemplateObject> = {
     : never
 };
 
+export type ParseResult<T> =
+    | { success: true; value: T }
+    | { success: false; error: string };
+
+export function ParseSuccess<T>(value: T): ParseResult<T> { return { success: true, value }; }
+export function ParseFailure<T = never>(error: string): ParseResult<T> { return { success: false, error }; }
+
 declare const required: unique symbol;
 declare const forceRequired: unique symbol;
 
@@ -41,7 +48,7 @@ export interface ValueTemplateAPI<T>
     isOptional: boolean;
     check(value: T, settings: ValidationToleranceSettings): boolean;
     validate(value: T, settings: ValidationSettings): ValidationResult;
-    parseString(value: string, allowPartial?: boolean, allowUnknowns?: boolean): T;
+    parseString(value: string, settings?: ValidationToleranceSettings): ParseResult<T>;
     getDefault(): T | undefined;
 }
 
@@ -67,7 +74,7 @@ export interface DefaultDefitionAPI<T> extends DefinitionAPI<T>
 
 export interface ValueDefinitionAPI<T> extends OptionalityDefinitionAPI<T>
 {
-    accepts(validator: (value: T) => boolean): this;
+    accepts(validator: (((value: T) => boolean) | ((value: T, context: ValidationContext) => void))): this;
 }
 
 export interface CollectionDefinitionAPI<T> extends ValueDefinitionAPI<T>
@@ -208,7 +215,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
         readonly parsingPriority: number = 3;
         public isOptional = false;
-        public customValidator?: (value: T, context: ValidationContext) => any;
+        public customValidator?: (value: T, context: ValidationContext) => (boolean | void);
         public cloneDefaultWhenDefaultRequested = true;
         protected default?: T;
 
@@ -243,9 +250,9 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return this;
         }
 
-        abstract parseString(value: string, allowPartial?: boolean, allowUnknowns?: boolean): T;
+        abstract parseString(value: string, settings?: ValidationToleranceSettings): ParseResult<T>;
 
-        check(value: T, settings: ValidationToleranceSettings): boolean
+        check(value: T, settings?: ValidationToleranceSettings): boolean
         {
             return this.validate(value, { fast: true, ...settings }) === ValidationResult.Pass;
         }
@@ -266,8 +273,10 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             if (this.validateType(value, context).result !== ValidationResult.Pass)
                 return context;
 
-            if (this.customValidator)
-                this.customValidator(value, context);
+            // simple style: `(value) => boolean` — false means reject
+            // detailed style: `(value, context) => void` — already called context.rejectWith itself
+            if (this.customValidator?.(value, context) === false)
+                context.rejectWith(ValidationError, "Custom validation failed");
 
             return context;
         }
@@ -285,7 +294,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
     {
         readonly parsingPriority: number = 4;
 
-        parseString(value: string): string { return value; }
+        parseString(value: string): ParseResult<string> { return ParseSuccess(value); }
 
         validateType(value: unknown, context: ValidationContext)
         {
@@ -297,12 +306,12 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
     {
         readonly parsingPriority: number = 0;
 
-        parseString(value: string): number
+        parseString(value: string): ParseResult<number>
         {
             const parsed = Number(value);
             if (!Number.isFinite(parsed) || value.trim() === "")
-                throw new Error(`Cannot parse "${value}" as number`);
-            return parsed;
+                return ParseFailure(`Cannot parse "${value}" as number`);
+            return ParseSuccess(parsed);
         }
 
         validateType(value: unknown, context: ValidationContext)
@@ -315,12 +324,12 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
     {
         readonly parsingPriority: number = 1;
 
-        parseString(value: string): boolean
+        parseString(value: string): ParseResult<boolean>
         {
             const lowered = value.trim().toLowerCase();
-            if (lowered === "true" || lowered === "1") return true;
-            if (lowered === "false" || lowered === "0") return false;
-            throw new Error(`Cannot parse "${value}" as boolean`);
+            if (lowered === "true" || lowered === "1") return ParseSuccess(true);
+            if (lowered === "false" || lowered === "0") return ParseSuccess(false);
+            return ParseFailure(`Cannot parse "${value}" as boolean`);
         }
 
         validateType(value: unknown, context: ValidationContext)
@@ -345,18 +354,16 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             this.permittedTypes.sort((a, b) => a.parsingPriority - b.parsingPriority);
         }
 
-        parseString(valueString: string, allowPartial?: boolean, allowUnknowns?: boolean): T
+
+        parseString(valueString: string, settings?: ValidationToleranceSettings): ParseResult<T>
         {
             for (const permittedType of this.permittedTypes)
             {
-                try
-                {
-                    const value = permittedType.parseString(valueString, allowPartial, allowUnknowns);
-                    if (permittedType.validate(value, allowPartial, allowUnknowns)) return value;
-                }
-                catch (e) { continue; }
+                const result = permittedType.parseString(valueString, settings);
+                if (result.success && permittedType.check(result.value, settings))
+                    return result as ParseResult<T>;
             }
-            throw new Error("Could not match input to any possible type");
+            return ParseFailure("Could not match input to any possible type");
         }
 
         validateType(value: unknown, context: ValidationContext)
@@ -416,10 +423,16 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return this.default !== undefined || this.membersWithDefaultValues.size !== 0;
         }
 
-        parseString(value: string): T
+        parseString(value: string): ParseResult<T>
         {
-            //We expect well formatted JSON, so we do not need to walk the whole object to correct values like a string "true" to boolean true
-            return JSON.parse(value);
+            let parsed: unknown;
+            try { parsed = JSON.parse(value); }
+            catch { return ParseFailure(`"${value}" is not valid JSON`); }
+
+            if (!this.check(parsed as T, {}))
+                return ParseFailure("Parsed value does not match schema");
+
+            return ParseSuccess(parsed as T);
         }
 
         validateType(value: T, context: ValidationContext)
@@ -512,12 +525,16 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return new ListTemplate<InferTypeDefinitionType<T[number]>>(elementType);
         }
 
-        parseString(value: string)
+        parseString(value: string): ParseResult<Record<string, T>>
         {
-            const parsed = JSON.parse(value);
+            let parsed: unknown;
+            try { parsed = JSON.parse(value); }
+            catch { return ParseFailure(`"${value}" is not valid JSON`); }
+
             if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
-                throw new Error(`Cannot parse "${value}" as list`);
-            return parsed as Record<string, T>;
+                return ParseFailure(`Cannot parse "${value}" as list`);
+
+            return ParseSuccess(parsed as Record<string, T>);
         }
 
         validateType(value: Record<string, T>, context: ValidationContext)
@@ -546,12 +563,16 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return new ArrayTemplate<InferTypeDefinitionType<T[number]>>(elementType);
         }
 
-        parseString(value: string): T[]
+        parseString(value: string): ParseResult<T[]>
         {
-            const parsed = JSON.parse(value);
+            let parsed: unknown;
+            try { parsed = JSON.parse(value); }
+            catch { return ParseFailure(`"${value}" is not valid JSON`); }
+
             if (!Array.isArray(parsed))
-                throw new Error(`Cannot parse "${value}" as array`);
-            return parsed as T[];
+                return ParseFailure(`Cannot parse "${value}" as array`);
+
+            return ParseSuccess(parsed as T[]);
         }
 
         validateType(value: T[], context: ValidationContext)
