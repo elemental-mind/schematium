@@ -39,15 +39,10 @@ type SetRequired<T, DefaultState extends boolean> =
 export interface ValueTemplateAPI<T>
 {
     isOptional: boolean;
-    validate(value: T, allowPartial?: boolean, allowUnknowns?: boolean): boolean;
+    check(value: T, settings: ValidationToleranceSettings): boolean;
+    validate(value: T, settings: ValidationSettings): ValidationResult;
     parseString(value: string, allowPartial?: boolean, allowUnknowns?: boolean): T;
     getDefault(): T | undefined;
-}
-
-export interface ValidationOptions
-{
-    allowPartial?: boolean;
-    allowUnknowns?: boolean;
 }
 
 export type ValueType<ThisType> = ThisType extends DefinitionAPI<infer T> ? T : never;
@@ -90,10 +85,7 @@ export type TemplateObjectEntry<T = any> = TemplateObject | ValueConfiguration<T
 
 export type ValueConfiguration<T> = ValueDefinitionAPI<T> | CollectionDefinitionAPI<T>;
 
-export type EntryValidationClosure<T> =
-    T extends Array<infer E> ? (value: E) => boolean :
-    T extends Record<string, infer E> ? (key: string, value: E) => boolean :
-    never;
+export type EntryValidationClosure<T> = (key: string | number, value: T) => boolean;
 
 export interface TemplatingAPI<
     TemplateExt = {},
@@ -216,9 +208,9 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
         readonly parsingPriority: number = 3;
         public isOptional = false;
-        protected default?: T;
+        public customValidator?: (value: T, context: ValidationContext) => any;
         public cloneDefaultWhenDefaultRequested = true;
-        protected customValidator?: (value: T) => boolean;
+        protected default?: T;
 
         get required(): any
         {
@@ -253,31 +245,58 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
         abstract parseString(value: string, allowPartial?: boolean, allowUnknowns?: boolean): T;
 
-        validate(value: T, allowPartial = false, allowUnknowns = false): boolean
+        check(value: T, settings: ValidationToleranceSettings): boolean
         {
-            if (value === undefined && this.isOptional) return true;
-            if (!this.validateType(value, allowPartial, allowUnknowns)) return false;
-            return this.customValidator?.(value as T) ?? true;
+            return this.validate(value, { fast: true, ...settings }) === ValidationResult.Pass;
         }
+
+        validate(value: T, settings: ValidationSettings = ValidationContext.DefaultSettings): ValidationResult
+        {
+            const context = ValidationContext.withSettings(settings);
+            this.validateWithContext(value, context);
+            context.release();
+            return context.result;
+        }
+
+        validateWithContext(value: T, context: ValidationContext)
+        {
+            if (value === undefined && !this.isOptional)
+                return context.rejectWith(UndefinedValue);
+
+            if (this.validateType(value, context).result !== ValidationResult.Pass)
+                return context;
+
+            if (this.customValidator)
+                this.customValidator(value, context);
+
+            return context;
+        }
+
+
+        abstract validateType(value: T, context: ValidationContext): ValidationContext;
 
         getDefault()
         {
             return this.cloneDefaultWhenDefaultRequested ? structuredClone(this.default) : this.default;
         }
-
-        abstract validateType(value: T, allowPartial?: boolean, allowUnknowns?: boolean): boolean;
     }
 
     class StringTemplate extends ValueTemplate<string>
     {
         readonly parsingPriority: number = 4;
+
         parseString(value: string): string { return value; }
-        validateType(value: unknown): value is string { return typeof value === "string"; }
+
+        validateType(value: unknown, context: ValidationContext)
+        {
+            return typeof value === "string" ? context : context.rejectWith(TypeMismatch, "String expected");
+        }
     }
 
     class NumberTemplate extends ValueTemplate<number>
     {
         readonly parsingPriority: number = 0;
+
         parseString(value: string): number
         {
             const parsed = Number(value);
@@ -285,12 +304,17 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
                 throw new Error(`Cannot parse "${value}" as number`);
             return parsed;
         }
-        validateType(value: unknown): value is number { return typeof value === "number" && Number.isFinite(value); }
+
+        validateType(value: unknown, context: ValidationContext)
+        {
+            return (typeof value === "number" && Number.isFinite(value)) ? context : context.rejectWith(TypeMismatch, "Number expected");
+        }
     }
 
     class BooleanTemplate extends ValueTemplate<boolean>
     {
         readonly parsingPriority: number = 1;
+
         parseString(value: string): boolean
         {
             const lowered = value.trim().toLowerCase();
@@ -298,7 +322,11 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             if (lowered === "false" || lowered === "0") return false;
             throw new Error(`Cannot parse "${value}" as boolean`);
         }
-        validateType(value: unknown): value is boolean { return typeof value === "boolean"; }
+
+        validateType(value: unknown, context: ValidationContext)
+        {
+            return (typeof value === "boolean") ? context : context.rejectWith(TypeMismatch, "Boolean Expected");
+        }
     }
 
     class VariadicTemplate<T> extends ValueTemplate<T>
@@ -331,11 +359,20 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             throw new Error("Could not match input to any possible type");
         }
 
-        validateType(value: unknown, allowPartial?: boolean, allowUnknowns?: boolean): boolean
+        validateType(value: unknown, context: ValidationContext)
         {
+            const fastSubContext = ValidationContext.getFastSubContext(context);
+
+            let matched = false;
+
             for (const permittedType of this.permittedTypes)
-                if (permittedType.validate(value, allowPartial, allowUnknowns)) return true;
-            return false;
+                if (!(matched = permittedType.validateWithContext(value, fastSubContext).result === ValidationResult.Pass))
+                    fastSubContext.refresh();
+                else break;
+
+            fastSubContext.release();
+
+            return matched ? context : context.rejectWith(UnknownValue, "Value not in list of allowed types");
         }
     }
 
@@ -385,30 +422,32 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return JSON.parse(value);
         }
 
-        validateType(value: T, allowPartial?: boolean, allowUnknowns?: boolean): boolean
+        validateType(value: T, context: ValidationContext)
         {
             if (typeof value !== "object" || value === null)
-                return false;
+                return context.rejectWith(TypeMismatch, "Expected object");
 
             const input = value as Record<string, unknown>;
 
             for (const [key, template] of this.template.entries())
             {
-                const value = input[key];
-                if (value === undefined)
+                if (key in input)
                 {
-                    if (!template.isOptional && !allowPartial)
-                        return false;
+                    context.pathTrace.push(key);
+                    template.validateWithContext(value, context);
+                    context.pathTrace.pop();
                 }
-                else if (!template.validate(value, allowPartial, allowUnknowns))
-                    return false;
+                else if (!(template.isOptional || context.allowPartial))
+                    context.rejectWith(MissingMember, "Expected property '" + key + "' in object");
+
+                if (!context.continueValidating) break;
             }
 
-            if (!allowUnknowns && this.strict)
+            if (!context.allowUnknowns && this.strict)
                 for (const key of Object.keys(input))
-                    if (!this.template.has(key)) return false;
+                    if (!this.template.has(key) && !context.rejectWith(UnknownMember, "Member '" + key + "' not allowed").continueValidating) break;
 
-            return true;
+            return context;
         }
 
         getDefault(): T | undefined
@@ -432,6 +471,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
     {
         readonly parsingPriority: number = 2;
         protected entryTemplate: ValueTemplate<any> | VariadicTemplate<any>;
+        protected entryGuard?: (key: string | number, value: any, context: ValidationContext) => any;
 
         constructor(entryTemplate: ValueTemplate<any> | VariadicTemplate<any>)
         {
@@ -439,7 +479,23 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             this.entryTemplate = entryTemplate;
         }
 
-        abstract acceptsEntries(validator: EntryValidationClosure<T>): any;
+        acceptsEntries(validator: (key: string | number, value: T) => boolean)
+        {
+            this.entryGuard = validator;
+            return this;
+        }
+
+        protected validateEntry(key: string | number, entry: any, context: ValidationContext): ValidationContext
+        {
+            context.pathTrace.push(key);
+
+            if (this.entryTemplate.validateWithContext(entry, context).continueValidating && this.entryGuard)
+                this.entryGuard(key, entry, context);
+
+            context.pathTrace.pop();
+
+            return context;
+        }
     }
 
     class ListTemplate<T> extends CollectionTemplate<Record<string, T>>
@@ -456,17 +512,6 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return new ListTemplate<InferTypeDefinitionType<T[number]>>(elementType);
         }
 
-        protected entryGuard(key: string, value: any)
-        {
-            return true;
-        }
-
-        acceptsEntries(validator: (key: string, value: T) => boolean)
-        {
-            this.entryGuard = validator;
-            return this;
-        }
-
         parseString(value: string)
         {
             const parsed = JSON.parse(value);
@@ -475,18 +520,15 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return parsed as Record<string, T>;
         }
 
-        validateType(value: Record<string, T>, allowPartial?: boolean, allowUnknowns?: boolean): boolean
+        validateType(value: Record<string, T>, context: ValidationContext)
         {
             if (typeof value !== "object" || value === null || Array.isArray(value))
-                return false;
-            for (const [key, entry] of Object.entries(value))
-                if (!this.validateEntry(key, entry, allowPartial, allowUnknowns)) return false;
-            return true;
-        }
+                return context.rejectWith(TypeMismatch, "Expected object");
 
-        protected validateEntry(key: string, entry: any, allowPartial?: boolean, allowUnknowns?: boolean): boolean
-        {
-            return this.entryTemplate.validate(entry, allowPartial, allowUnknowns) && this.entryGuard(key, entry);
+            for (const [key, entry] of Object.entries(value))
+                if (!this.validateEntry(key, entry, context).continueValidating) break;
+
+            return context;
         }
     }
 
@@ -504,17 +546,6 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return new ArrayTemplate<InferTypeDefinitionType<T[number]>>(elementType);
         }
 
-        protected entryGuard(value: any)
-        {
-            return true;
-        }
-
-        acceptsEntries(validator: (value: T) => boolean)
-        {
-            this.entryGuard = validator;
-            return this;
-        }
-
         parseString(value: string): T[]
         {
             const parsed = JSON.parse(value);
@@ -523,18 +554,15 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return parsed as T[];
         }
 
-        validateType(value: T[], allowPartial?: boolean, allowUnknowns?: boolean): boolean
+        validateType(value: T[], context: ValidationContext)
         {
             if (!Array.isArray(value))
-                return false;
-            for (const entry of value)
-                if (!this.validateEntry(entry, allowPartial, allowUnknowns)) return false;
-            return true;
-        }
+                return context.rejectWith(TypeMismatch, "Array expected");
 
-        protected validateEntry(entry: any, allowPartial?: boolean, allowUnknowns?: boolean): boolean
-        {
-            return this.entryTemplate.validate(entry, allowPartial, allowUnknowns) && this.entryGuard(entry);
+            for (const [key, entry] of value.entries())
+                if (!this.validateEntry(key, entry, context).continueValidating) break;
+
+            return context;
         }
     }
 
@@ -607,6 +635,180 @@ export function GenerateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args
         variadics: { valueOf, oneOf },
         collections: { list, listOf, array, arrayOf }
     } as T;
+}
+
+interface ValidationToleranceSettings
+{
+    //allowPartial enables checking only partial objects, that don't have all required keys. It only checks types of known keys, not if all required keys are present. Defaults to false. 
+    allowPartial?: boolean;
+    //allowUnknowns ignores keys that are not defined in the schema and lets objects pass that have more keys than defined in the schema. Defaults to false.
+    allowUnknowns?: boolean;
+}
+
+export interface ValidationSettings extends ValidationToleranceSettings
+{
+    //fast validation fails on the first wrong validation, defaults to true
+    fast?: boolean;
+}
+
+abstract class ValidationContext
+{
+    static DefaultSettings = { fast: true, allowPartial: false, allowUnknowns: false };
+    protected static FastContextCache: FastValidator[] = [];
+    protected static ThoroughContextCache: ThoroughValidator[] = [];
+
+    static withSettings(settings: ValidationSettings)
+    {
+        let context;
+        if (settings.fast === false)
+            context = this.ThoroughContextCache.pop() ?? new ThoroughValidator();
+        else
+            context = this.FastContextCache.pop() ?? new FastValidator();
+
+        context.refresh();
+        context.adoptSettings(settings);
+        return context;
+    }
+
+    static getFastSubContext(mainContext: ValidationContext)
+    {
+        const subContext = this.FastContextCache.pop() ?? new FastValidator();
+        subContext.adoptSettings(mainContext);
+        return subContext;
+    }
+
+    allowPartial = false;
+    allowUnknowns = false;
+
+    abstract pathTrace: Array<String | Number>;
+    continueValidating: boolean = true;
+
+    result: ValidationResult = ValidationResult.Pass;
+
+    abstract rejectWith(errorType: typeof ValidationError, message?: string): ValidationContext;
+    abstract release(): void;
+
+    adoptSettings(contextOrSettings: ValidationToleranceSettings)
+    {
+        this.allowPartial = contextOrSettings.allowPartial ?? false;
+        this.allowUnknowns = contextOrSettings.allowPartial ?? false;;
+    }
+
+    refresh()
+    {
+        this.result = ValidationResult.Pass;
+        this.continueValidating = true;
+    }
+}
+
+class FastValidator extends ValidationContext
+{
+    declare pathTrace: (String | Number)[];
+    static {
+        //We use a single array instance so we don't have to instantiate an array per FastValidator instance.
+        this.prototype.pathTrace = [];
+        //We nerf the array so it never actually gets elements added. This way we eliminate path tracing which we don't need and speed up fast validation.
+        this.prototype.pathTrace.push = () => 0;
+    }
+
+    rejectWith()
+    {
+        this.result = ValidationResult.Fail;
+        this.continueValidating = false;
+
+        return this;
+    }
+
+    release()
+    {
+        ValidationContext.FastContextCache.push(this);
+    }
+}
+
+class ThoroughValidator extends ValidationContext
+{
+    pathTrace = [];
+
+    refresh(): void
+    {
+        super.refresh();
+        this.pathTrace.length = 0;
+    }
+
+    rejectWith(errorType: typeof ValidationError, message?: string)
+    {
+        const error = new errorType();
+        if (this.pathTrace.length)
+            error.path = this.pathTrace.join(".");
+        if (message !== undefined)
+            error.message = message;
+
+        if (this.result === ValidationResult.Pass)
+            this.result = new ValidationResult(false, [error]);
+        else
+            this.result.errors!.push(error);
+
+        return this;
+    }
+
+    release()
+    {
+        ValidationContext.ThoroughContextCache.push(this);
+    }
+}
+
+export class ValidationResult
+{
+    static Pass = Object.freeze(new ValidationResult(true));
+    static Fail = Object.freeze(new ValidationResult(false));
+
+    result: boolean;
+    errors?: ValidationError[];
+
+    constructor(result: boolean, errors?: ValidationError[])
+    {
+        this.result = result;
+        if (errors)
+            this.errors = errors;
+    }
+}
+
+export class ValidationError
+{
+    static None = Object.freeze(new ValidationError());
+
+    path?: string;
+    message?: string;
+
+    get kind()
+    {
+        return this.constructor.name;
+    }
+}
+
+class TypeMismatch extends ValidationError
+{
+
+}
+
+class MissingMember extends ValidationError
+{
+
+}
+
+class UnknownMember extends ValidationError
+{
+
+}
+
+class UnknownValue extends ValidationError
+{
+
+}
+
+class UndefinedValue extends ValidationError
+{
+
 }
 
 const defaultAPI = GenerateTemplatingAPI();
