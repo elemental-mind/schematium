@@ -495,7 +495,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
             const input = value as Record<string, unknown>;
 
-            for (const [key, template] of this.template.entries())
+            for (const [key, template] of this.entries)
             {
                 if (Object.hasOwn(input, key))
                 {
@@ -511,7 +511,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
             if (!context.allowUnknowns && this.strict)
                 for (const key of Object.keys(input))
-                    if (!this.template.has(key) && !context.rejectWith(UnknownMember, "Member '" + key + "' not allowed").continueValidating) break;
+                    if (!this.keys.has(key) && !context.rejectWith(UnknownMember, "Member '" + key + "' not allowed").continueValidating) break;
 
             return context;
         }
