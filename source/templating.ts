@@ -2,10 +2,31 @@
 // Types & Interfaces
 //------------------------------------------------
 
+declare const required: unique symbol;
+declare const forceRequired: unique symbol;
+declare const valueType: unique symbol;
+
+export type ParseResult<T> =
+    | { success: true; value: T; }
+    | { success: false; error: string; };
+
+export type ValueType<ThisType> = ThisType extends DefinitionAPI<infer T> ? T : never;
+
+export type TemplateObjectEntry<T = any> = TemplateObject | ValueConfiguration<T>;
+export type ValueConfiguration<T> = ValueDefinitionAPI<T> | CollectionDefinitionAPI<T>;
+
+export type ValueValidationClosure<T> = ((value: T) => boolean) | ((value: T, context: ValidationContext) => void);
+export type EntryValidationClosure<T> = ((key: string | number, value: T) => boolean) | ((key: string | number, value: T, context: ValidationContext) => void);
+
+type TypeOption = PrimitiveTemplate | TemplateObject | ValueTemplateAPI<any>;
 type PrimitiveTemplate = typeof number | typeof string | typeof boolean;
 type PrimitiveString = "string" | "boolean" | "number";
 
-type TypeOption = PrimitiveTemplate | TemplateObject | ValueTemplateAPI<any>;
+type RequiredEntry = { [required]: true; };
+type StrictlyRequiredEntry = { [forceRequired]: true; };
+type OptionalEntry = { [required]: false; };
+type StrictlyOptionalEntry = { [forceRequired]: false; };
+
 export type InferTypeDefinitionType<T extends TypeOption> =
     T extends typeof number ? number :
     T extends typeof string ? string :
@@ -16,16 +37,23 @@ export type InferTypeDefinitionType<T extends TypeOption> =
 
 export type InferSchemaType<T extends TemplateObject> = {
     [K in keyof T]:
-    T[K] extends ValueConfiguration<infer V> ? T[K] extends Required ? Exclude<V, undefined> : V | undefined :
+    T[K] extends ValueConfiguration<infer V> ? T[K] extends RequiredEntry ? Exclude<V, undefined> : V | undefined :
     T[K] extends TemplateObject ? InferSchemaType<T[K]>
     : never
 };
 
-export type ParseResult<T> =
-    | { success: true; value: T; }
-    | { success: false; error: string; };
+type ForceRequired<T, ForcedState extends boolean> =
+    Omit<T, typeof required | typeof forceRequired> &
+    (ForcedState extends true ? StrictlyRequiredEntry & RequiredEntry : StrictlyOptionalEntry & OptionalEntry);
 
-interface ValidationToleranceSettings
+type SetRequired<T, DefaultState extends boolean> =
+    Omit<T, typeof required | typeof forceRequired> & (
+        T extends StrictlyRequiredEntry ? StrictlyRequiredEntry & RequiredEntry :
+        T extends StrictlyOptionalEntry ? StrictlyOptionalEntry & OptionalEntry :
+        { [required]: DefaultState; }
+    );
+
+export interface ValidationToleranceSettings
 {
     //allowPartial enables checking only partial objects, that don't have all required keys. It only checks types of known keys, not if all required keys are present. Defaults to false. 
     allowPartial?: boolean;
@@ -35,41 +63,18 @@ interface ValidationToleranceSettings
 
 export interface ValidationSettings extends ValidationToleranceSettings
 {
-    //fast validation fails on the first wrong validation, defaults to true
+    //fast validation fails on the first wrong validation and does not report issues, defaults to true
     fast?: boolean;
 }
-
-declare const required: unique symbol;
-declare const forceRequired: unique symbol;
-
-type Required = { [required]: true; };
-type StrictlyRequired = { [forceRequired]: true; };
-type Optional = { [required]: false; };
-type StrictlyOptional = { [forceRequired]: false; };
-
-type ForceRequired<T, ForcedState extends boolean> =
-    Omit<T, typeof required | typeof forceRequired> &
-    (ForcedState extends true ? StrictlyRequired & Required : StrictlyOptional & Optional);
-
-type SetRequired<T, DefaultState extends boolean> =
-    Omit<T, typeof required | typeof forceRequired> & (
-        T extends StrictlyRequired ? StrictlyRequired & Required :
-        T extends StrictlyOptional ? StrictlyOptional & Optional :
-        { [required]: DefaultState; }
-    );
 
 export interface ValueTemplateAPI<T>
 {
     isOptional: boolean;
-    check(value: T, settings: ValidationToleranceSettings): boolean;
-    validate(value: T, settings: ValidationSettings): ValidationResult;
+    check(value: unknown, settings: ValidationToleranceSettings): value is T;
+    validate(value: unknown, settings: ValidationSettings): ValidationResult;
     parseString(value: string, settings?: ValidationToleranceSettings): ParseResult<T>;
     getDefault(): T | undefined;
 }
-
-export type ValueType<ThisType> = ThisType extends DefinitionAPI<infer T> ? T : never;
-
-declare const valueType: unique symbol;
 
 export interface DefinitionAPI<T>
 {
@@ -82,14 +87,14 @@ export interface OptionalityDefinitionAPI<T> extends DefinitionAPI<T>
     optional: ForceRequired<this, false>;
 }
 
-export interface DefaultDefitionAPI<T> extends DefinitionAPI<T>
+export interface DefaultDefinitionAPI<T> extends DefinitionAPI<T>
 {
     withDefault: (defaultValue: T, cloneWhenAssigned?: boolean) => SetRequired<this, false>;
 }
 
 export interface ValueDefinitionAPI<T> extends OptionalityDefinitionAPI<T>
 {
-    accepts(validator: (((value: T) => boolean) | ((value: T, context: ValidationContext) => void))): this;
+    accepts(validator: ValueValidationClosure<T>): this;
 }
 
 export interface CollectionDefinitionAPI<T> extends ValueDefinitionAPI<T>
@@ -97,17 +102,10 @@ export interface CollectionDefinitionAPI<T> extends ValueDefinitionAPI<T>
     acceptsEntries(validator: EntryValidationClosure<T>): this;
 }
 
-
 export interface TemplateObject
 {
     [key: string]: TemplateObjectEntry;
 }
-
-export type TemplateObjectEntry<T = any> = TemplateObject | ValueConfiguration<T>;
-
-export type ValueConfiguration<T> = ValueDefinitionAPI<T> | CollectionDefinitionAPI<T>;
-
-export type EntryValidationClosure<T> = (key: string | number, value: T) => boolean;
 
 export interface TemplatingAPI<
     TemplateExt = {},
@@ -120,23 +118,23 @@ export interface TemplatingAPI<
         schema<T extends TemplateObject>(inputSchema: T): ValueTemplateAPI<InferSchemaType<T>> & TemplateExt;
     },
     primitives: {
-        string(): ValueDefinitionAPI<string> & DefaultDefitionAPI<string> & PrimitiveExt & Required;
-        string(defaultValue: string): ValueDefinitionAPI<string> & PrimitiveExt & Optional;
-        number(): ValueDefinitionAPI<number> & DefaultDefitionAPI<number> & PrimitiveExt & Required;
-        number(defaultValue: number): ValueDefinitionAPI<number> & PrimitiveExt & Optional;
-        boolean(): ValueDefinitionAPI<boolean> & DefaultDefitionAPI<boolean> & PrimitiveExt & Required;
-        boolean(defaultValue: boolean): ValueDefinitionAPI<boolean> & PrimitiveExt & Optional;
-        object<T extends TemplateObject>(value: T): ValueDefinitionAPI<InferSchemaType<T>> & DefaultDefitionAPI<InferSchemaType<T>> & PrimitiveExt & Required;
+        string(): ValueDefinitionAPI<string> & DefaultDefinitionAPI<string> & PrimitiveExt & RequiredEntry;
+        string(defaultValue: string): ValueDefinitionAPI<string> & PrimitiveExt & OptionalEntry;
+        number(): ValueDefinitionAPI<number> & DefaultDefinitionAPI<number> & PrimitiveExt & RequiredEntry;
+        number(defaultValue: number): ValueDefinitionAPI<number> & PrimitiveExt & OptionalEntry;
+        boolean(): ValueDefinitionAPI<boolean> & DefaultDefinitionAPI<boolean> & PrimitiveExt & RequiredEntry;
+        boolean(defaultValue: boolean): ValueDefinitionAPI<boolean> & PrimitiveExt & OptionalEntry;
+        object<T extends TemplateObject>(value: T): ValueDefinitionAPI<InferSchemaType<T>> & DefaultDefinitionAPI<InferSchemaType<T>> & PrimitiveExt & RequiredEntry;
     },
     variadics: {
-        valueOf<T extends TypeOption[]>(...types: T): ValueDefinitionAPI<InferTypeDefinitionType<T[number]>> & DefaultDefitionAPI<T[number]> & VariadicExt & Required;
-        oneOf<T extends string | number>(...possibleValues: T[]): OptionalityDefinitionAPI<T> & DefaultDefitionAPI<T> & VariadicExt & Required;
+        valueOf<T extends TypeOption[]>(...types: T): ValueDefinitionAPI<InferTypeDefinitionType<T[number]>> & DefaultDefinitionAPI<T[number]> & VariadicExt & RequiredEntry;
+        oneOf<T extends string | number>(...possibleValues: T[]): OptionalityDefinitionAPI<T> & DefaultDefinitionAPI<T> & VariadicExt & RequiredEntry;
     },
     collections: {
-        list<T>(defaultValue: Record<string, T>, cloneOnDefaultAssignment?: boolean): CollectionDefinitionAPI<Record<string, T>> & CollectionExt & Optional;
-        listOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & DefaultDefitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & CollectionExt & Required;
-        array<T>(defaultValue: T[], cloneOnDefaultAssignment?: boolean): CollectionDefinitionAPI<T[]> & CollectionExt & Optional;
-        arrayOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & DefaultDefitionAPI<InferTypeDefinitionType<T[number]>[]> & CollectionExt & Required;
+        list<T>(defaultValue: Record<string, T>, cloneOnDefaultAssignment?: boolean): CollectionDefinitionAPI<Record<string, T>> & CollectionExt & OptionalEntry;
+        listOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & DefaultDefinitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & CollectionExt & RequiredEntry;
+        array<T>(defaultValue: T[], cloneOnDefaultAssignment?: boolean): CollectionDefinitionAPI<T[]> & CollectionExt & OptionalEntry;
+        arrayOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & DefaultDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & CollectionExt & RequiredEntry;
     },
 }
 
@@ -153,7 +151,7 @@ function ParseFailure<T = never>(error: string): ParseResult<T> { return { succe
 
 function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Object)
 {
-    abstract class ValueTemplate<T> extends BaseClass implements ValueTemplateAPI<T>, ValueDefinitionAPI<T>, DefaultDefitionAPI<T>
+    abstract class ValueTemplate<T> extends BaseClass implements ValueTemplateAPI<T>, ValueDefinitionAPI<T>, DefaultDefinitionAPI<T>
     {
         declare [valueType]: T;
 
@@ -195,6 +193,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
                             identifiedNormalizedTypes.add(ArrayTemplate.fromExample(exampleValue));
                         else
                             identifiedNormalizedTypes.add(ListTemplate.fromExample(exampleValue));
+                        break;
                     default:
                         throw new Error("Cannot resolve template from example value");
                 }
@@ -241,7 +240,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
         readonly parsingPriority: number = 3;
         public isOptional = false;
-        public customValidator?: (value: T, context: ValidationContext) => (boolean | void);
+        public customValidator?: ValueValidationClosure<T>;
         public cloneDefaultWhenDefaultRequested = true;
         protected default?: T;
 
@@ -267,9 +266,10 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return this.constructor.name.replace(/Template$/, '').toLowerCase();
         }
 
-        accepts(validator: (value: T) => boolean): any
+        accepts(validator: ValueValidationClosure<T>): any
         {
             this.customValidator = validator;
+
             return this;
         }
 
@@ -278,6 +278,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             this.default = defaultValue;
             this.cloneDefaultWhenDefaultRequested = cloneWhenAssigned;
             this.isOptional = true;
+
             return this;
         }
 
@@ -301,7 +302,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             catch { return undefined; }
         }
 
-        check(value: T, settings?: ValidationToleranceSettings): boolean
+        check(value: T, settings?: ValidationToleranceSettings): value is T
         {
             return this.validate(value, { fast: true, ...settings }) === ValidationResult.Pass;
         }
@@ -316,16 +317,17 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
         validateWithContext(value: T, context: ValidationContext)
         {
-            if (value === undefined && !this.isOptional)
-                return context.rejectWith(UndefinedValue);
+            if (value === undefined)
+                return this.isOptional ? context : context.rejectWith(UndefinedValue, "Value is required");
 
-            if (this.validateType(value, context).result !== ValidationResult.Pass)
+            //We compare issue count before and after validation. If rejectWith...was called we skip the custom validation as we already have an issue within.
+            if (context.issueCount !== this.validateType(value, context).issueCount)
                 return context;
 
             // simple style: `(value) => boolean` — false means reject
             // detailed style: `(value, context) => void` — already called context.rejectWith itself
             if (this.customValidator?.(value, context) === false)
-                context.rejectWith(ValidationError, "Custom validation failed");
+                context.rejectWith(ValidationIssue, "Custom validation failed");
 
             return context;
         }
@@ -409,7 +411,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             for (const permittedType of this.permittedTypes)
             {
                 const result = permittedType.parseString(valueString, settings);
-                if (result.success && permittedType.check(result.value, settings))
+                if (result.success)
                     return result as ParseResult<T>;
             }
             return ParseFailure("Could not match input to any possible type");
@@ -426,11 +428,12 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             const fastSubContext = ValidationContext.getFastSubContext(context);
 
             let matched = false;
-
             for (const permittedType of this.permittedTypes)
-                if (!(matched = permittedType.validateWithContext(value, fastSubContext).result === ValidationResult.Pass))
-                    fastSubContext.refresh();
-                else break;
+            {
+                matched = permittedType.validateWithContext(value, fastSubContext).result === ValidationResult.Pass;
+
+                if (matched) break; else fastSubContext.refresh();
+            }
 
             fastSubContext.release();
 
@@ -448,7 +451,8 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
         }
 
         public strict: boolean = true;
-        public template: Map<string, ValueTemplate<any>> = new Map();
+        public entries: Array<[string, ValueTemplate<any>]> = [];
+        public keys: Set<string> = new Set();
         public hasNonCloneDefaultMembers: boolean = false;
         private membersWithDefaultValues: Map<string, ValueTemplate<any>> = new Map();
 
@@ -463,7 +467,8 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             {
                 const subTemplate = value instanceof ValueTemplate ? value : ObjectTemplate.fromTemplateObject(value as TemplateObject);
 
-                this.template.set(key, subTemplate);
+                this.keys.add(key);
+                this.entries.push([key, subTemplate]);
 
                 if (subTemplate.hasDefaultValue)
                     this.membersWithDefaultValues.set(key, subTemplate);
@@ -492,10 +497,10 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
             for (const [key, template] of this.template.entries())
             {
-                if (key in input)
+                if (Object.hasOwn(input, key))
                 {
                     context.pathTrace.push(key);
-                    template.validateWithContext(value, context);
+                    template.validateWithContext(input[key], context);
                     context.pathTrace.pop();
                 }
                 else if (!(template.isOptional || context.allowPartial))
@@ -532,7 +537,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
     {
         readonly parsingPriority: number = 2;
         protected entryTemplate: ValueTemplate<any> | VariadicTemplate<any>;
-        protected entryGuard?: (key: string | number, value: any, context: ValidationContext) => any;
+        protected entryGuard?: EntryValidationClosure<T>;
 
         constructor(entryTemplate: ValueTemplate<any> | VariadicTemplate<any>)
         {
@@ -540,7 +545,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             this.entryTemplate = entryTemplate;
         }
 
-        acceptsEntries(validator: (key: string | number, value: T) => boolean)
+        acceptsEntries(validator: EntryValidationClosure<T>)
         {
             this.entryGuard = validator;
             return this;
@@ -550,8 +555,12 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
         {
             context.pathTrace.push(key);
 
-            if (this.entryTemplate.validateWithContext(entry, context).continueValidating && this.entryGuard)
-                this.entryGuard(key, entry, context);
+            //We only call the entryGuard if there was no issue with the underlying type
+            // Also if we have a boolean validator, we need to reject ourselves:
+            // simple style: `(key, value) => boolean` — false means reject
+            // detailed style: `(key, value, context) => void` — already called context.rejectWith itself
+            if (context.issueCount === this.entryTemplate.validateWithContext(entry, context).issueCount && this.entryGuard?.(key, entry, context) === false)
+                context.rejectWith(ValidationIssue, "Entry Validation failed");
 
             context.pathTrace.pop();
 
@@ -653,10 +662,11 @@ abstract class ValidationContext
 
     abstract pathTrace: Array<String | Number>;
     continueValidating: boolean = true;
+    issueCount = 0;
 
     result: ValidationResult = ValidationResult.Pass;
 
-    abstract rejectWith(errorType: typeof ValidationError, message?: string): ValidationContext;
+    abstract rejectWith(errorType: typeof ValidationIssue, message?: string): ValidationContext;
     abstract release(): void;
 
     adoptSettings(contextOrSettings: ValidationToleranceSettings)
@@ -669,6 +679,7 @@ abstract class ValidationContext
     {
         this.result = ValidationResult.Pass;
         this.continueValidating = true;
+        this.issueCount = 0;
     }
 }
 
@@ -686,6 +697,7 @@ class FastValidator extends ValidationContext
     {
         this.result = ValidationResult.Fail;
         this.continueValidating = false;
+        this.issueCount++;
 
         return this;
     }
@@ -706,7 +718,7 @@ class ThoroughValidator extends ValidationContext
         this.pathTrace.length = 0;
     }
 
-    rejectWith(errorType: typeof ValidationError, message?: string)
+    rejectWith(errorType: typeof ValidationIssue, message?: string)
     {
         const error = new errorType();
         if (this.pathTrace.length)
@@ -715,9 +727,11 @@ class ThoroughValidator extends ValidationContext
             error.message = message;
 
         if (this.result === ValidationResult.Pass)
-            this.result = new ValidationResult(false, [error]);
-        else
-            this.result.errors!.push(error);
+            this.result = new ValidationFailure();
+
+        (this.result as ValidationFailure).issues!.push(error);
+
+        this.issueCount++;
 
         return this;
     }
@@ -728,29 +742,30 @@ class ThoroughValidator extends ValidationContext
     }
 }
 
-export class ValidationResult
+class ValidationSuccess
 {
-    static Pass = Object.freeze(new ValidationResult(true));
-    static Fail = Object.freeze(new ValidationResult(false));
-
-    result: boolean;
-    errors?: ValidationError[];
-
-    constructor(result: boolean, errors?: ValidationError[])
-    {
-        this.result = result;
-        if (errors)
-            this.errors = errors;
-    }
+    success = true as const;
 }
 
+class ValidationFailure
+{
+    success = false as const;
+    issues: ValidationIssue[] = [];
+}
+
+type ValidationResult = { success: true; } | { success: false, issues: ValidationIssue[]; };
+const ValidationResult = {
+    Pass: Object.freeze(new ValidationSuccess()),
+    Fail: Object.freeze(new ValidationFailure())
+};
+
 //------------------------------------------------
-// Validation Errors
+// Validation Issues
 //------------------------------------------------
 
-export class ValidationError
+export class ValidationIssue
 {
-    static None = Object.freeze(new ValidationError());
+    static None = Object.freeze(new ValidationIssue());
 
     path?: string;
     message?: string;
@@ -761,12 +776,11 @@ export class ValidationError
     }
 }
 
-class TypeMismatch extends ValidationError { }
-class MissingMember extends ValidationError { }
-class UnknownMember extends ValidationError { }
-class UnknownValue extends ValidationError { }
-class UndefinedValue extends ValidationError { }
-
+class TypeMismatch extends ValidationIssue { }
+class MissingMember extends ValidationIssue { }
+class UnknownMember extends ValidationIssue { }
+class UnknownValue extends ValidationIssue { }
+class UndefinedValue extends ValidationIssue { }
 
 //------------------------------------------------
 // Templating API Functions
@@ -796,38 +810,38 @@ export function GenerateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args
         return defaultValue !== undefined ? new BooleanTemplate().withDefault(defaultValue) : new BooleanTemplate();
     }
 
-    function valueOf<T extends TypeOption[]>(...types: T): ValueDefinitionAPI<InferTypeDefinitionType<T[number]>> & Required
+    function valueOf<T extends TypeOption[]>(...types: T): ValueDefinitionAPI<InferTypeDefinitionType<T[number]>> & RequiredEntry
     {
         return ValueTemplate.fromTypeInputs(...types) as any;
     }
 
-    function oneOf<T extends string | number>(...possibleValues: T[]): OptionalityDefinitionAPI<T> & Required
+    function oneOf<T extends string | number>(...possibleValues: T[]): OptionalityDefinitionAPI<T> & RequiredEntry
     {
         const valueSet = new Set(possibleValues);
         return ValueTemplate.fromExamples(...possibleValues).accepts(value => valueSet.has(value)) as any;
     }
 
-    function object<T extends TemplateObject>(value: T): ValueDefinitionAPI<InferSchemaType<T>> & Required
+    function object<T extends TemplateObject>(value: T): ValueDefinitionAPI<InferSchemaType<T>> & RequiredEntry
     {
         return ObjectTemplate.fromTemplateObject(value) as any;
     }
 
-    function list<T>(defaultValue: Record<string, T>, cloneOnDefaultAssignment: boolean = true): CollectionDefinitionAPI<Record<string, T>> & Optional
+    function list<T>(defaultValue: Record<string, T>, cloneOnDefaultAssignment: boolean = true): CollectionDefinitionAPI<Record<string, T>> & OptionalEntry
     {
         return ListTemplate.fromExample<T>(defaultValue).withDefault(defaultValue, cloneOnDefaultAssignment);
     }
 
-    function listOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & Required
+    function listOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & RequiredEntry
     {
         return ListTemplate.fromTypes(...types) as any;
     }
 
-    function array<T>(defaultValue: T[], cloneOnDefaultAssignment = true): CollectionDefinitionAPI<T[]> & Optional
+    function array<T>(defaultValue: T[], cloneOnDefaultAssignment = true): CollectionDefinitionAPI<T[]> & OptionalEntry
     {
         return ArrayTemplate.fromExample(defaultValue).withDefault(defaultValue, cloneOnDefaultAssignment);
     }
 
-    function arrayOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & Required
+    function arrayOf<T extends TypeOption[]>(...types: T): CollectionDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & RequiredEntry
     {
         return ArrayTemplate.fromTypes(...types) as any;
     }
