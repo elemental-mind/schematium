@@ -27,6 +27,20 @@ type StrictlyRequiredEntry = { [forceRequired]: true; };
 type OptionalEntry = { [required]: false; };
 type StrictlyOptionalEntry = { [forceRequired]: false; };
 
+type EntryValue<E> =
+    E extends ValueConfiguration<infer V> ? V :
+    E extends TemplateObject ? InferSchemaType<E> :
+    never;
+type RequiredKeys<T extends TemplateObject> = { [K in keyof T]-?: T[K] extends RequiredEntry ? K : never }[keyof T];
+type OptionalKeys<T extends TemplateObject> = Exclude<keyof T, RequiredKeys<T>>;
+
+export type InferSchemaType<T extends TemplateObject> =
+    {
+        [K in RequiredKeys<T>]: Exclude<EntryValue<T[K]>, undefined>;
+    } & {
+        [K in OptionalKeys<T>]?: EntryValue<T[K]>;
+    };
+
 export type InferTypeDefinitionType<T extends TypeOption> =
     T extends typeof number ? number :
     T extends typeof string ? string :
@@ -34,13 +48,6 @@ export type InferTypeDefinitionType<T extends TypeOption> =
     T extends TemplateObject ? InferSchemaType<T> :
     T extends Array<infer E extends TypeOption> ? InferTypeDefinitionType<E> :
     never;
-
-export type InferSchemaType<T extends TemplateObject> = {
-    [K in keyof T]:
-    T[K] extends ValueConfiguration<infer V> ? T[K] extends RequiredEntry ? Exclude<V, undefined> : V | undefined :
-    T[K] extends TemplateObject ? InferSchemaType<T[K]>
-    : never
-};
 
 type ForceRequired<T, ForcedState extends boolean> =
     Omit<T, typeof required | typeof forceRequired> &
