@@ -73,7 +73,7 @@ export interface ValueTemplateAPI<T>
     check(value: unknown, settings: ValidationToleranceSettings): value is T;
     validate(value: unknown, settings: ValidationSettings): ValidationResult;
     parseString(value: string, settings?: ValidationToleranceSettings): ParseResult<T>;
-    getDefault(): T | undefined;
+    getDefault(): Partial<T> | undefined;
 }
 
 export interface DefinitionAPI<T>
@@ -163,6 +163,8 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
                 case "number": return new NumberTemplate();
                 case "boolean": return new BooleanTemplate();
                 case "object":
+                    if (exampleValue === null)
+                        throw new Error("Cannot derive template from null");
                     if (Array.isArray(exampleValue))
                         return ArrayTemplate.fromExample<any>(exampleValue);
                     else
@@ -653,6 +655,7 @@ abstract class ValidationContext
     static getFastSubContext(mainContext: ValidationContext)
     {
         const subContext = this.FastContextCache.pop() ?? new FastValidator();
+        subContext.refresh();
         subContext.adoptSettings(mainContext);
         return subContext;
     }
