@@ -1,10 +1,14 @@
-import { Debug } from "unitium";
 import * as assert from "node:assert";
-import { array, arrayOf, boolean, list, listOf, number, object, schema, string, type TemplateObject, valueOf, ValueTemplateAPI, ValueType } from "./templating.ts";
+import { array, arrayOf, boolean, number, object, record, recordOf, schema, string, ValidationSettings, valueOf } from "./templating.ts";
+import type { ParseResult, TemplateObject, ValidationToleranceSettings } from "./templating.ts";
 
-
-// Runtime access to validate/parseString — not on the public API type but present on instances.
-function withValidate(api: object): { validate(value: any, allowPartial?: boolean, allowUnknowns?: boolean): boolean; parseString(value: string, allowPartial?: boolean, allowUnknowns?: boolean): any; }
+// Runtime access to check/validate/parseString — check wraps validate with fast:true returning boolean.
+function withValidate(api: object):
+    {
+        check(value: any, settings?: ValidationToleranceSettings): boolean;
+        validate(value: any, settings?: ValidationSettings): boolean;
+        parseString(value: string, settings?: ValidationToleranceSettings): ParseResult<any>;
+    }
 {
     return api as any;
 }
@@ -16,7 +20,7 @@ const SubTemplate = {
 
 const SampleTemplate = {
     //required
-    number: number(123).required.accepts(number => number < 256),
+    number: number(123).required.accepts((v: number) => v < 256),
     //required
     bool: boolean(),
     //required
@@ -24,9 +28,9 @@ const SampleTemplate = {
     //required
     either: valueOf(number, string),
     //optional because of default
-    array: arrayOf(number, string).withDefault([]).accepts(array => array.length < 100).acceptsEntries(entry => true),
+    array: arrayOf(number, string).withDefault([]).accepts((array: (number | string)[]) => array.length < 100).acceptsEntries((key: string | number, value: number | string) => true),
     //optional because of default
-    list: listOf(SubTemplate).withDefault({ sample: { sampleParameter: 123, sampleValue: "text" } }).acceptsEntries((key, value) => true),
+    list: recordOf(SubTemplate).withDefault({ sample: { sampleParameter: 123, sampleValue: "text" } }).acceptsEntries((key: string | number, value: any) => true),
     //optional, because all members are optional
     deep: {
         //optional because of default
@@ -67,48 +71,48 @@ export class PrimitiveDefnitionTests
 
     acceptsCustomValidator()
     {
-        const t = number(123).accepts(v => v > 0);
+        const t = number(123).accepts((v: number) => v > 0);
         const template = withValidate(t);
-        assert.strictEqual(template.validate(5), true);
-        assert.strictEqual(template.validate(-1), false);
+        assert.strictEqual(template.check(5), true);
+        assert.strictEqual(template.check(-1), false);
     }
 
     parsesStringValue()
     {
         const t = string();
-        assert.strictEqual(withValidate(t).parseString("hello"), "hello");
+        assert.deepStrictEqual(withValidate(t).parseString("hello"), { success: true, value: "hello" });
     }
 
     parsesNumberValue()
     {
         const t = number();
-        assert.strictEqual(withValidate(t).parseString("42"), 42);
+        assert.deepStrictEqual(withValidate(t).parseString("42"), { success: true, value: 42 });
     }
 
     throwsOnInvalidNumber()
     {
         const t = number();
-        assert.throws(() => withValidate(t).parseString("not-a-number"), /Cannot parse/);
+        assert.strictEqual(withValidate(t).parseString("not-a-number").success, false);
     }
 
     parsesBooleanTrue()
     {
         const t = boolean();
-        assert.strictEqual(withValidate(t).parseString("true"), true);
-        assert.strictEqual(withValidate(t).parseString("1"), true);
+        assert.deepStrictEqual(withValidate(t).parseString("true"), { success: true, value: true });
+        assert.deepStrictEqual(withValidate(t).parseString("1"), { success: true, value: true });
     }
 
     parsesBooleanFalse()
     {
         const t = boolean();
-        assert.strictEqual(withValidate(t).parseString("false"), false);
-        assert.strictEqual(withValidate(t).parseString("0"), false);
+        assert.deepStrictEqual(withValidate(t).parseString("false"), { success: true, value: false });
+        assert.deepStrictEqual(withValidate(t).parseString("0"), { success: true, value: false });
     }
 
     throwsOnInvalidBoolean()
     {
         const t = boolean();
-        assert.throws(() => withValidate(t).parseString("yes"), /Cannot parse/);
+        assert.strictEqual(withValidate(t).parseString("yes").success, false);
     }
 }
 
@@ -122,25 +126,25 @@ export class VariadicDefinitionTests
     {
         const t = valueOf(number, string);
         const template = withValidate(t);
-        assert.strictEqual(template.validate(42), true);
-        assert.strictEqual(template.validate("hello"), true);
-        assert.strictEqual(template.validate(false), false);
+        assert.strictEqual(template.check(42), true);
+        assert.strictEqual(template.check("hello"), true);
+        assert.strictEqual(template.check(false), false);
     }
 
     acceptsCustomValidatorOnVariadic()
     {
-        const t = valueOf(number).accepts(v => (v as number) > 0);
+        const t = valueOf(number).accepts((v: number) => v > 0);
         const template = withValidate(t);
-        assert.strictEqual(template.validate(5), true);
-        assert.strictEqual(template.validate(-1), false);
+        assert.strictEqual(template.check(5), true);
+        assert.strictEqual(template.check(-1), false);
     }
 
     validatesArrayEntriesWithAcceptsEntries()
     {
-        const t = arrayOf(number).acceptsEntries(v => (v as number) % 2 === 0);
+        const t = arrayOf(number).acceptsEntries((key: string | number, v: number) => v % 2 === 0);
         const template = withValidate(t);
-        assert.strictEqual(template.validate([2, 4, 6]), true);
-        assert.strictEqual(template.validate([1, 3, 5]), false);
+        assert.strictEqual(template.check([2, 4, 6]), true);
+        assert.strictEqual(template.check([1, 3, 5]), false);
     }
 
     // ============================================================
@@ -152,14 +156,14 @@ export class VariadicDefinitionTests
     {
         // number (priority 0) is tried before string (priority 2) → "42" → 42
         const t = valueOf(number, string);
-        assert.strictEqual(withValidate(t).parseString("42"), 42);
+        assert.deepStrictEqual(withValidate(t).parseString("42"), { success: true, value: 42 });
     }
 
     stringIsFallbackWhenNumberCannotParse()
     {
         // number fails on "hello", string catches it
         const t = valueOf(number, string);
-        assert.strictEqual(withValidate(t).parseString("hello"), "hello");
+        assert.deepStrictEqual(withValidate(t).parseString("hello"), { success: true, value: "hello" });
     }
 
     userPassedOrderDoesNotAffectParsePriority()
@@ -167,42 +171,43 @@ export class VariadicDefinitionTests
         // Even when string is listed first, number (priority 0) is tried before
         // string (priority 2), so "42" parses as number 42.
         const t = valueOf(string, number);
-        assert.strictEqual(withValidate(t).parseString("42"), 42);
+        assert.deepStrictEqual(withValidate(t).parseString("42"), { success: true, value: 42 });
     }
 
     parsesBooleanTrueFromString()
     {
-        // number (priority 0) tried first, fails on "true"/"1"; then boolean (priority 1) catches them
+        // number (priority 0) tried first — succeeds on "1" (→ 1), fails on "true";
+        // boolean (priority 1) catches "true"
         const t = valueOf(number, boolean);
-        assert.strictEqual(withValidate(t).parseString("true"), true);
-        assert.strictEqual(withValidate(t).parseString("1"), 1);
+        assert.deepStrictEqual(withValidate(t).parseString("true"), { success: true, value: true });
+        assert.deepStrictEqual(withValidate(t).parseString("1"), { success: true, value: 1 });
     }
 
     parsesBooleanFalseFromString()
     {
         const t = valueOf(boolean);
-        assert.strictEqual(withValidate(t).parseString("false"), false);
-        assert.strictEqual(withValidate(t).parseString("0"), false);
+        assert.deepStrictEqual(withValidate(t).parseString("false"), { success: true, value: false });
+        assert.deepStrictEqual(withValidate(t).parseString("0"), { success: true, value: false });
     }
 
     singleNumberTypeThrowsOnInvalidString()
     {
         const t = valueOf(number);
-        assert.throws(() => withValidate(t).parseString("not-a-number"));
+        assert.strictEqual(withValidate(t).parseString("not-a-number").success, false);
     }
 
     singleStringTypeReturnsIdentity()
     {
         const t = valueOf(string);
-        assert.strictEqual(withValidate(t).parseString("anything"), "anything");
+        assert.deepStrictEqual(withValidate(t).parseString("anything"), { success: true, value: "anything" });
     }
 
     emptyStringParsesAsStringWhenNumberIsPermitted()
     {
-        // Number("") === 0, which is finite, so number matches
+        // Number("") === 0, which is finite, but parseRaw guards against empty strings
         const t = valueOf(number, string);
-        assert.strictEqual(withValidate(t).parseString(""), "");
-        assert.strictEqual(withValidate(t).parseString(" "), " ");
+        assert.deepStrictEqual(withValidate(t).parseString(""), { success: true, value: "" });
+        assert.deepStrictEqual(withValidate(t).parseString(" "), { success: true, value: " " });
     }
 }
 
@@ -225,9 +230,9 @@ export class ObjectDefinitionTests
         const template = withValidate(t);
 
         // Without allowPartial, missing required field fails
-        assert.strictEqual(template.validate({ optional: "x" }), false);
+        assert.strictEqual(template.check({ optional: "x" }), false);
         // With allowPartial, missing required field passes
-        assert.strictEqual(template.validate({ optional: "x" }, true), true);
+        assert.strictEqual(template.check({ optional: "x" }, { allowPartial: true }), true);
     }
 
     allowUnknownsLetsExtraMembersPass()
@@ -238,9 +243,9 @@ export class ObjectDefinitionTests
         const template = withValidate(t);
 
         // Without allowUnknowns, extra field fails
-        assert.strictEqual(template.validate({ known: "ok", unknown: "extra" }), false);
+        assert.strictEqual(template.check({ known: "ok", unknown: "extra" }), false);
         // With allowUnknowns, extra field passes
-        assert.strictEqual(template.validate({ known: "ok", unknown: "extra" }, false, true), true);
+        assert.strictEqual(template.check({ known: "ok", unknown: "extra" }, { allowUnknowns: true }), true);
     }
 
     allowPartialAndAllowUnknownsWorkTogether()
@@ -251,7 +256,7 @@ export class ObjectDefinitionTests
         const template = withValidate(t);
 
         // Missing required field + extra field — both flags needed
-        assert.strictEqual(template.validate({ extra: "x" }, true, true), true);
+        assert.strictEqual(template.check({ extra: "x" }, { allowPartial: true, allowUnknowns: true }), true);
     }
 
     allowPartialWithOptionalMembersStillWorks()
@@ -262,9 +267,9 @@ export class ObjectDefinitionTests
         });
         const template = withValidate(t);
 
-        assert.strictEqual(template.validate({ optional: 123 }), false);
+        assert.strictEqual(template.check({ optional: 123 }), false);
         // Missing optional field is fine regardless
-        assert.strictEqual(template.validate({ optional: 123 }, true), true);
+        assert.strictEqual(template.check({ optional: 123 }, { allowPartial: true }), true);
     }
 
     allowPartialPropagatesToNestedObjects()
@@ -276,8 +281,8 @@ export class ObjectDefinitionTests
         });
         const template = withValidate(t);
 
-        assert.strictEqual(template.validate({}, true), true);
-        assert.strictEqual(template.validate({ nested: {} }, true), true);
+        assert.strictEqual(template.check({}, { allowPartial: true }), true);
+        assert.strictEqual(template.check({ nested: {} }, { allowPartial: true }), true);
     }
 
     allowUnknownsPropagatesToNestedObjects()
@@ -290,7 +295,7 @@ export class ObjectDefinitionTests
         const template = withValidate(t);
 
         // Top-level allowUnknowns should also propagate to nested
-        assert.strictEqual(template.validate({ nested: { a: "ok", extra: true } }, false, true), true);
+        assert.strictEqual(template.check({ nested: { a: "ok", extra: true } }, { allowUnknowns: true }), true);
     }
 
     allowPartialDoesNotSkipTypeCheckForPresentMembers()
@@ -302,7 +307,7 @@ export class ObjectDefinitionTests
         const template = withValidate(t);
 
         // With allowPartial, a wrong type on a present member still fails
-        assert.strictEqual(template.validate({ name: "hello", count: "not-a-number" }, true), false);
+        assert.strictEqual(template.check({ name: "hello", count: "not-a-number" }, { allowPartial: true }), false);
     }
 
     allowUnknownsDoesNotSkipTypeCheckForKnownMembers()
@@ -313,7 +318,7 @@ export class ObjectDefinitionTests
         const template = withValidate(t);
 
         // With allowUnknowns, a wrong type on a known member still fails
-        assert.strictEqual(template.validate({ name: 42, extra: "surplus" }, false, true), false);
+        assert.strictEqual(template.check({ name: 42, extra: "surplus" }, { allowUnknowns: true }), false);
     }
 
     bothFlagsDoNotMaskTypeMismatchOnRequiredFields()
@@ -325,7 +330,7 @@ export class ObjectDefinitionTests
         const template = withValidate(t);
 
         // Even with both flags, type errors are still rejected
-        assert.strictEqual(template.validate({ required: "string", optional: "x" }, true, true), false);
+        assert.strictEqual(template.check({ required: "string", optional: "x" }, { allowPartial: true, allowUnknowns: true }), false);
     }
 
     bothFlagsDoNotMaskTypeMismatchInNestedObjects()
@@ -338,18 +343,18 @@ export class ObjectDefinitionTests
         const template = withValidate(t);
 
         // Both flags propagate to nested — type mismatch still fails
-        assert.strictEqual(template.validate({ nested: { value: "wrong-type" } }, true, true), false);
+        assert.strictEqual(template.check({ nested: { value: "wrong-type" } }, { allowPartial: true, allowUnknowns: true }), false);
     }
 
     bothFlagsDoNotMaskTypeMismatchInLists()
     {
         const t = schema({
-            items: listOf(number),
+            items: recordOf(number),
         });
         const template = withValidate(t);
 
         // Type mismatch on list entries still fails
-        assert.strictEqual(template.validate({ items: { a: "not-a-number" } }, true, true), false);
+        assert.strictEqual(template.check({ items: { a: "not-a-number" } }, { allowPartial: true, allowUnknowns: true }), false);
     }
 
     bothFlagsDoNotMaskTypeMismatchInArrays()
@@ -360,20 +365,20 @@ export class ObjectDefinitionTests
         const template = withValidate(t);
 
         // Type mismatch on array entries still fails
-        assert.strictEqual(template.validate({ items: ["not-a-number"] }, true, true), false);
+        assert.strictEqual(template.check({ items: ["not-a-number"] }, { allowPartial: true, allowUnknowns: true }), false);
     }
 
     allowPartialKeepsCustomValidatorActive()
     {
         const t = schema({
-            value: number().accepts(v => v > 0),
+            value: number().accepts((v: number) => v > 0),
         });
         const template = withValidate(t);
 
         // allowPartial still runs custom validators
-        assert.strictEqual(template.validate({}, true), true);
-        assert.strictEqual(template.validate({ value: -1 }, true), false);
-        assert.strictEqual(template.validate({ value: 5 }, true), true);
+        assert.strictEqual(template.check({}, { allowPartial: true }), true);
+        assert.strictEqual(template.check({ value: -1 }, { allowPartial: true }), false);
+        assert.strictEqual(template.check({ value: 5 }, { allowPartial: true }), true);
     }
 
     validatesValidConcreteObject()
@@ -391,7 +396,7 @@ export class ObjectDefinitionTests
             deep: { bar: ["a", "b"] },
         };
 
-        assert.strictEqual(template.validate(validObject), true);
+        assert.strictEqual(template.check(validObject), true);
     }
 
     optionalFieldsDontRequireValue()
@@ -407,7 +412,7 @@ export class ObjectDefinitionTests
             either: 1,
         };
 
-        assert.strictEqual(template.validate(withoutOptional), true);
+        assert.strictEqual(template.check(withoutOptional), true);
     }
 
     requiredFieldsRejectUndefined()
@@ -430,7 +435,7 @@ export class ObjectDefinitionTests
         {
             const { ...entries } = base;
             (entries[key] as any) = undefined;
-            assert.strictEqual(template.validate(entries), false, `expected validation to fail when '${key}' is omitted`);
+            assert.strictEqual(template.check(entries), false, `expected validation to fail when '${key}' is omitted`);
         }
     }
 
@@ -448,99 +453,99 @@ export class ObjectDefinitionTests
         const template = withValidate(t);
 
         // All members of nested are optional (due to defaults), so nested itself is optional
-        assert.strictEqual(template.validate({ name: "test" }), true);
+        assert.strictEqual(template.check({ name: "test" }), true);
 
         // With valid nested data
-        assert.strictEqual(template.validate({ name: "test", nested: { foo: "hello", bar: 123 } }), true);
+        assert.strictEqual(template.check({ name: "test", nested: { foo: "hello", bar: 123 } }), true);
 
         // An entry in nested is invalid
-        assert.strictEqual(template.validate({ name: "test", nested: { foo: 123, bar: 42 } } as any), false);
+        assert.strictEqual(template.check({ name: "test", nested: { foo: 123, bar: 42 } } as any), false);
     }
 }
 
 // ============================================================
-// List template
+// Record template
 // ============================================================
 
-export class ListDefinitionTests
+export class RecordDefinitionTests
 {
     stringSampleObjectsGetRecognizedAsStringValues()
     {
-        const t = list({ value: "text", anotherValue: "also text" });
+        const t = record({ value: "text", anotherValue: "also text" });
         const template = withValidate(t);
-        assert.strictEqual(template.validate({ a: "foo", b: "bar" }), true);
-        assert.strictEqual(template.validate({ a: 1 } as any), false);
-        assert.strictEqual(template.validate({ a: true } as any), false);
+        assert.strictEqual(template.check({ a: "foo", b: "bar" }), true);
+        assert.strictEqual(template.check({ a: 1 } as any), false);
+        assert.strictEqual(template.check({ a: true } as any), false);
     }
 
-    passedSubExampleObjectsAreParsedAsLists()
+    passedSubExampleObjectsAreParsedAsRecords()
     {
-        const t = list({ value: { value: "text", anotherValue: "also text" } });
+        const t = record({ value: { value: "text", anotherValue: "also text" } });
         const template = withValidate(t);
-        assert.strictEqual(template.validate({ value: { value: "foo", anotherValue: "bar" } }), true);
-        assert.strictEqual(template.validate({ value: { value: "foo", newName: "bar" } }), true);
-        assert.strictEqual(template.validate({ value: { value: 123 } }), false);
+        assert.strictEqual(template.check({ value: { value: "foo", anotherValue: "bar" } }), true);
+        assert.strictEqual(template.check({ value: { value: "foo", newName: "bar" } }), true);
+        assert.strictEqual(template.check({ value: { value: 123 } }), false);
     }
 
     rejectsNonObjectInput()
     {
-        const t = listOf(string);
+        const t = recordOf(string);
         const template = withValidate(t);
-        assert.strictEqual(template.validate([] as any), false);
-        assert.strictEqual(template.validate(null as any), false);
-        assert.strictEqual(template.validate("str" as any), false);
+        assert.strictEqual(template.check([] as any), false);
+        assert.strictEqual(template.check(null as any), false);
+        assert.strictEqual(template.check("str" as any), false);
     }
 
     acceptsEntriesValidator()
     {
-        const t = listOf(number).acceptsEntries((key, value) => value > 0);
+        const t = recordOf(number).acceptsEntries((key: string | number, value: number) => value > 0);
         const template = withValidate(t);
-        assert.strictEqual(template.validate({ a: 1, b: 2 }), true);
-        assert.strictEqual(template.validate({ a: -1 }), false);
+        assert.strictEqual(template.check({ a: 1, b: 2 }), true);
+        assert.strictEqual(template.check({ a: -1 }), false);
     }
 
-    validatesStringOrNumberList()
+    validatesStringOrNumberRecord()
     {
-        const t = listOf(string, number);
+        const t = recordOf(string, number);
         const template = withValidate(t);
-        assert.strictEqual(template.validate({ a: "text", b: 42 }), true);
-        assert.strictEqual(template.validate({ a: true }), false);
-        assert.strictEqual(template.validate({ a: {} }), false);
+        assert.strictEqual(template.check({ a: "text", b: 42 }), true);
+        assert.strictEqual(template.check({ a: true }), false);
+        assert.strictEqual(template.check({ a: {} }), false);
     }
 
-    emptyListIsValid()
+    emptyRecordIsValid()
     {
-        const t = listOf(string, number);
+        const t = recordOf(string, number);
         const template = withValidate(t);
-        assert.strictEqual(template.validate({}), true);
+        assert.strictEqual(template.check({}), true);
     }
 
-    exampleListWithStringOrNumber()
+    exampleRecordWithStringOrNumber()
     {
-        const t = list({ a: "hello", b: 42 });
+        const t = record({ a: "hello", b: 42 });
         const template = withValidate(t);
-        assert.strictEqual(template.validate({ a: "world", b: 99 }), true);
-        assert.strictEqual(template.validate({ a: "only" }), true);
-        assert.strictEqual(template.validate({ a: true }), false);
-        assert.strictEqual(template.validate({ a: 1, b: "yep" }), true);
-        assert.strictEqual(template.validate({}), true);
+        assert.strictEqual(template.check({ a: "world", b: 99 }), true);
+        assert.strictEqual(template.check({ a: "only" }), true);
+        assert.strictEqual(template.check({ a: true }), false);
+        assert.strictEqual(template.check({ a: 1, b: "yep" }), true);
+        assert.strictEqual(template.check({}), true);
     }
 
-    exampleListAllowsAnyKeyName()
+    exampleRecordAllowsAnyKeyName()
     {
-        const t = list({ value: "text" });
+        const t = record({ value: "text" });
         const template = withValidate(t);
-        assert.strictEqual(template.validate({ value: "foo" }), true);
-        assert.strictEqual(template.validate({ anyKey: "bar" }), true);
-        assert.strictEqual(template.validate({ "": "empty" }), true);
-        assert.strictEqual(template.validate({ key: "x", anotherKey: "y" }), true);
+        assert.strictEqual(template.check({ value: "foo" }), true);
+        assert.strictEqual(template.check({ anyKey: "bar" }), true);
+        assert.strictEqual(template.check({ "": "empty" }), true);
+        assert.strictEqual(template.check({ key: "x", anotherKey: "y" }), true);
     }
 
-    parsesListFromJson()
+    parsesRecordFromJson()
     {
-        const t = listOf(string);
+        const t = recordOf(string);
         const result = withValidate(t).parseString('{"a":"x"}');
-        assert.deepStrictEqual(result, { a: "x" });
+        assert.deepStrictEqual(result, { success: true, value: { a: "x" } });
     }
 }
 
@@ -554,25 +559,25 @@ export class ArrayDefinitionTests
     {
         const t = arrayOf(number);
         const template = withValidate(t);
-        assert.strictEqual(template.validate([1, 2, 3]), true);
-        assert.strictEqual(template.validate(["a"] as any), false);
+        assert.strictEqual(template.check([1, 2, 3]), true);
+        assert.strictEqual(template.check(["a"] as any), false);
     }
 
     validatesArrayOfMixedTypes()
     {
         const t = arrayOf(number, string);
         const template = withValidate(t);
-        assert.strictEqual(template.validate([1, "two", 3]), true);
-        assert.strictEqual(template.validate([false] as any), false);
+        assert.strictEqual(template.check([1, "two", 3]), true);
+        assert.strictEqual(template.check([false] as any), false);
     }
 
     rejectsNonArrayInput()
     {
         const t = arrayOf(number);
         const template = withValidate(t);
-        assert.strictEqual(template.validate({} as any), false);
-        assert.strictEqual(template.validate(null as any), false);
-        assert.strictEqual(template.validate("str" as any), false);
+        assert.strictEqual(template.check({} as any), false);
+        assert.strictEqual(template.check(null as any), false);
+        assert.strictEqual(template.check("str" as any), false);
     }
 
     withDefaultSetsDefault()
@@ -585,7 +590,7 @@ export class ArrayDefinitionTests
     parsesArrayFromJson()
     {
         const t = arrayOf(number);
-        assert.deepStrictEqual(withValidate(t).parseString("[1, 2, 3]"), [1, 2, 3]);
+        assert.deepStrictEqual(withValidate(t).parseString("[1, 2, 3]"), { success: true, value: [1, 2, 3] });
     }
 }
 
@@ -709,13 +714,13 @@ export class DefaultValueTests
         assert.strictEqual(t.isOptional, true);
     }
 
-    listWithDefault()
+    recordWithDefault()
     {
-        const t = list({ key: "value" }) as any;
-        ;
+        const t = record({ key: "value" }) as any;
         assert.deepStrictEqual(t.getDefault(), { key: "value" });
         assert.strictEqual(t.isOptional, true);
     }
+
     arrayOfHasNoDefault()
     {
         const t = arrayOf(number) as any;
@@ -724,9 +729,9 @@ export class DefaultValueTests
         assert.strictEqual(t.isOptional, false);
     }
 
-    listOfHasNoDefault()
+    recordOfHasNoDefault()
     {
-        const t = listOf(string) as any;
+        const t = recordOf(string) as any;
 
         assert.strictEqual(t.getDefault(), undefined);
         assert.strictEqual(t.isOptional, false);
@@ -759,9 +764,9 @@ export class DefaultCloneTests
         assert.deepStrictEqual(t.default, [1, 2, 3, 4]);
     }
 
-    listDefaultReturnsDeepClone()
+    recordDefaultReturnsDeepClone()
     {
-        const t = list({ key: "value" }) as any;
+        const t = record({ key: "value" }) as any;
         const clone = t.getDefault();
         assert.deepStrictEqual(clone, { key: "value" });
         assert.notStrictEqual(clone, t.default);
@@ -769,9 +774,9 @@ export class DefaultCloneTests
         assert.deepStrictEqual(t.default, { key: "value" });
     }
 
-    listDisabledCloneReturnsReference()
+    recordDisabledCloneReturnsReference()
     {
-        const t = list({ key: "value" }, false) as any;
+        const t = record({ key: "value" }, false) as any;
         const result = t.getDefault();
         assert.deepStrictEqual(result, { key: "value" });
         assert.strictEqual(result, t.default);
