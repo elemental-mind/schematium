@@ -24,9 +24,10 @@ type CollectionEntryType<T> =
     T extends Array<infer E> ? E :
     never;
 
-type TypeOption = PrimitiveTemplate | TemplateObject | ValueTemplateAPI<any>;
+type TypeOption = PrimitiveTemplate | TemplateObject | ValueTemplateAPI<any> | Literal;
 type PrimitiveTemplate = typeof number | typeof string | typeof boolean;
 type PrimitiveString = "string" | "boolean" | "number";
+type Literal = number | string;
 
 type RequiredEntry = { [required]: true; };
 type StrictlyRequiredEntry = { [forceRequired]: true; };
@@ -224,20 +225,21 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
         static fromTypeInput(typeOption: TypeOption | PrimitiveString): ValueTemplate<any>
         {
-            if (typeof typeOption === "string")
-                switch (typeOption)
-                {
-                    case "string": return new StringTemplate();
-                    case "number": return new NumberTemplate();
-                    case "boolean": return new BooleanTemplate();
-                }
-            // If they pass the function references (e.g., `arrayOf(string)`), just invoke it to generate a arequired template
-            else if (typeof typeOption === "function")
-                return typeOption() as any;
-            else if (typeOption instanceof ValueTemplate)
-                return typeOption;
-            else if (typeof typeOption === "object" && typeOption !== null)
-                return ObjectTemplate.fromTemplateObject(typeOption as TemplateObject);
+            switch (typeof typeOption)
+            {
+                case "string":
+                case "number":
+                    return new LiteralTemplate(typeOption);
+                case "function":
+                    // If they pass the function references (e.g., `arrayOf(string)`), just invoke it to generate a required template
+                    return typeOption() as any;
+                case "object":
+                    if (typeOption === null)
+                        break;
+                    if (typeOption instanceof ValueTemplate)
+                        return typeOption;
+                    return ObjectTemplate.fromTemplateObject(typeOption as TemplateObject);
+            }
 
             throw new Error("Type constraint not recognized");
         }
@@ -405,6 +407,45 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
         }
     }
 
+    class LiteralTemplate<T extends Literal> extends ValueTemplate<T>
+    {
+        permittedValue: T;
+        permittedValueTemplate: ValueTemplate<T>;
+
+        constructor(permittedValue: T)
+        {
+            switch (typeof permittedValue)
+            {
+                case "number":
+                case "string":
+                    break;
+                default:
+                    throw new Error("Only numbers or strings permitted as literal types");
+            }
+
+            super();
+            this.permittedValue = permittedValue;
+            this.permittedValueTemplate = ValueTemplate.fromExample(permittedValue);
+        }
+
+        parseString(value: string, settings?: ValidationToleranceSettings): ParseResult<T>
+        {
+            const result = this.permittedValueTemplate.parseString(value, settings);
+            if (!result.success || result.value !== this.permittedValue)
+                return ParseFailure("Provided value does not match literal '" + this.permittedValue + "'");
+
+            return result;
+        }
+
+        //full override of parseString, thus parseRaw not needed.
+        protected parseRaw() { return undefined; }
+
+        validateType(value: unknown, context: ValidationContext): ValidationContext
+        {
+            return (value === this.permittedValue) ? context : context.rejectWith(TypeMismatch, "Not matching literal value: '" + this.permittedValue + "'");
+        }
+    }
+
     class VariadicTemplate<T> extends ValueTemplate<T>
     {
         public permittedTypes: ValueTemplate<any>[] = [];
@@ -433,10 +474,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
         }
 
         // parseString is a full override (try each candidate type), so parseRaw is never called
-        protected parseRaw(value: string)
-        {
-            return undefined;
-        }
+        protected parseRaw() { return undefined; }
 
         validateType(value: unknown, context: ValidationContext)
         {
@@ -462,6 +500,9 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
         static fromTemplateObject(templateObject: TemplateObject)
         {
+            if (typeof templateObject !== "object")
+                throw new Error("Expected template object, but got raw value instead");
+
             return ObjectTemplate.TemplateCache.get(templateObject) ?? new ObjectTemplate(templateObject);
         }
 
@@ -639,7 +680,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
         }
     }
 
-    return { ValueTemplate, StringTemplate, NumberTemplate, BooleanTemplate, VariadicTemplate, ObjectTemplate, CollectionTemplate, RecordTemplate, ArrayTemplate } as const;
+    return { ValueTemplate, StringTemplate, NumberTemplate, BooleanTemplate, VariadicTemplate, ObjectTemplate, CollectionTemplate, RecordTemplate, ArrayTemplate, LiteralTemplate } as const;
 }
 
 //------------------------------------------------
@@ -804,7 +845,7 @@ class UndefinedValue extends ValidationIssue { }
 
 export function GenerateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args: any[]) => any = Object)
 {
-    const { ValueTemplate, StringTemplate, NumberTemplate, BooleanTemplate, VariadicTemplate, ObjectTemplate, CollectionTemplate, RecordTemplate, ArrayTemplate } = generateTemplatingClasses(BaseClass);
+    const { ValueTemplate, StringTemplate, NumberTemplate, BooleanTemplate, VariadicTemplate, ObjectTemplate, CollectionTemplate, RecordTemplate, ArrayTemplate, LiteralTemplate } = generateTemplatingClasses(BaseClass);
 
     function schema(inputSchema: TemplateObject)
     {
@@ -833,8 +874,8 @@ export function GenerateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args
 
     function oneOf<const T extends readonly [string | number, ...(string | number)[]]>(...possibleValues: T): OptionalityDefinitionAPI<T[number]> & RequiredEntry
     {
-        const valueSet = new Set(possibleValues);
-        return ValueTemplate.fromExamples(...possibleValues).accepts(value => valueSet.has(value)) as any;
+        const literalTypes = possibleValues.map(value => new LiteralTemplate(value));
+        return new VariadicTemplate<number | string>(...literalTypes) as any;
     }
 
     function object<T extends TemplateObject>(value: T): ValueDefinitionAPI<InferSchemaType<T>> & RequiredEntry
