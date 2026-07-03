@@ -86,8 +86,8 @@ export interface ValidationSettings extends ValidationToleranceSettings
 export interface ValueTemplateAPI<T>
 {
     isOptional: boolean;
-    check(value: unknown, settings: ValidationToleranceSettings): value is T;
-    validate(value: unknown, settings: ValidationSettings): ValidationResult;
+    check(value: unknown, settings?: ValidationToleranceSettings): value is T;
+    validate(value: unknown, settings?: ValidationSettings): ValidationResult;
     parseString(value: string, settings?: ValidationToleranceSettings): ParseResult<T>;
     getDefault(): Partial<T> | undefined;
 }
