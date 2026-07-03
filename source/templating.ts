@@ -194,15 +194,19 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             if (exampleValues.length === 1)
                 return this.fromExample(exampleValues[0]);
 
-            const identifiedNormalizedTypes = new Set<PrimitiveString | ValueTemplate<any>>();
+            const identifiedNormalizedTypes = new Set<PrimitiveString | ValueTemplate<any> | PrimitiveTemplate>();
             for (const exampleValue of exampleValues)
             {
                 switch (typeof exampleValue)
                 {
                     case "string":
+                        identifiedNormalizedTypes.add(string);
+                        break;
                     case "number":
+                        identifiedNormalizedTypes.add(number);
+                        break;
                     case "boolean":
-                        identifiedNormalizedTypes.add(typeof exampleValue as PrimitiveString);
+                        identifiedNormalizedTypes.add(boolean);
                         break;
                     case "object":
                         if (Array.isArray(exampleValue))
