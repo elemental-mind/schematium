@@ -19,6 +19,8 @@ export type ValueConfiguration<T> = ValueDefinitionAPI<T> | CollectionDefinition
 export type ValueValidationClosure<T> = ((value: T) => boolean) | ((value: T, context: ValidationContext) => void);
 export type EntryValidationClosure<T> = ((key: string | number, value: CollectionEntryType<T>) => boolean) | ((key: string | number, value: CollectionEntryType<T>, context: ValidationContext) => void);
 
+type UnionToIntersection<U> = (U extends any ? (x: U) => void : never) extends (x: infer I) => void ? I : never;
+
 type CollectionEntryType<T> =
     T extends Record<string, infer E> ? E :
     T extends Array<infer E> ? E :
@@ -125,30 +127,31 @@ export interface TemplatingAPI<
     TemplateExt = {},
     PrimitiveExt = {},
     VariadicExt = {},
-    CollectionExt = {}
+    CollectionExt = {},
+    GeneralExt = {}
 >
 {
     templating: {
-        schema<T extends TemplateObject>(inputSchema: T): ValueTemplateAPI<InferSchemaType<T>> & TemplateExt;
+        schema<T extends TemplateObject>(inputSchema: T): ValueTemplateAPI<InferSchemaType<T>> & TemplateExt & GeneralExt;
     },
     primitives: {
-        string(): ValueDefinitionAPI<string> & DefaultDefinitionAPI<string> & PrimitiveExt & RequiredEntry;
-        string(defaultValue: string): ValueDefinitionAPI<string> & PrimitiveExt & OptionalEntry;
-        number(): ValueDefinitionAPI<number> & DefaultDefinitionAPI<number> & PrimitiveExt & RequiredEntry;
-        number(defaultValue: number): ValueDefinitionAPI<number> & PrimitiveExt & OptionalEntry;
-        boolean(): ValueDefinitionAPI<boolean> & DefaultDefinitionAPI<boolean> & PrimitiveExt & RequiredEntry;
-        boolean(defaultValue: boolean): ValueDefinitionAPI<boolean> & PrimitiveExt & OptionalEntry;
-        object<T extends TemplateObject>(value: T): ValueDefinitionAPI<InferSchemaType<T>> & DefaultDefinitionAPI<InferSchemaType<T>> & PrimitiveExt & RequiredEntry;
+        string(): ValueDefinitionAPI<string> & DefaultDefinitionAPI<string> & PrimitiveExt & RequiredEntry & GeneralExt;
+        string(defaultValue: string): ValueDefinitionAPI<string> & PrimitiveExt & OptionalEntry & GeneralExt;
+        number(): ValueDefinitionAPI<number> & DefaultDefinitionAPI<number> & PrimitiveExt & RequiredEntry & GeneralExt;
+        number(defaultValue: number): ValueDefinitionAPI<number> & PrimitiveExt & OptionalEntry & GeneralExt;
+        boolean(): ValueDefinitionAPI<boolean> & DefaultDefinitionAPI<boolean> & PrimitiveExt & RequiredEntry & GeneralExt;
+        boolean(defaultValue: boolean): ValueDefinitionAPI<boolean> & PrimitiveExt & OptionalEntry & GeneralExt;
+        object<T extends TemplateObject>(value: T): ValueDefinitionAPI<InferSchemaType<T>> & DefaultDefinitionAPI<InferSchemaType<T>> & PrimitiveExt & RequiredEntry & GeneralExt;
     },
     variadics: {
-        valueOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): ValueDefinitionAPI<InferTypeDefinitionType<T[number]>> & DefaultDefinitionAPI<T[number]> & VariadicExt & RequiredEntry;
-        oneOf<const T extends readonly [string | number, ...(string | number)[]]>(...possibleValues: T): OptionalityDefinitionAPI<T[number]> & DefaultDefinitionAPI<T[number]> & VariadicExt & RequiredEntry;
+        valueOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): ValueDefinitionAPI<InferTypeDefinitionType<T[number]>> & DefaultDefinitionAPI<T[number]> & VariadicExt & RequiredEntry & GeneralExt;
+        oneOf<const T extends readonly [string | number, ...(string | number)[]]>(...possibleValues: T): OptionalityDefinitionAPI<T[number]> & DefaultDefinitionAPI<T[number]> & VariadicExt & RequiredEntry & GeneralExt;
     },
     collections: {
-        record<T>(defaultValue: Record<string, T>, cloneOnDefaultAssignment?: boolean): CollectionDefinitionAPI<Record<string, T>> & CollectionExt & OptionalEntry;
-        recordOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): CollectionDefinitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & DefaultDefinitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & CollectionExt & RequiredEntry;
-        array<T>(defaultValue: T[], cloneOnDefaultAssignment?: boolean): CollectionDefinitionAPI<T[]> & CollectionExt & OptionalEntry;
-        arrayOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): CollectionDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & DefaultDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & CollectionExt & RequiredEntry;
+        record<T>(defaultValue: Record<string, T>, cloneOnDefaultAssignment?: boolean): CollectionDefinitionAPI<Record<string, T>> & CollectionExt & OptionalEntry & GeneralExt;
+        recordOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): CollectionDefinitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & DefaultDefinitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & CollectionExt & RequiredEntry & GeneralExt;
+        array<T>(defaultValue: T[], cloneOnDefaultAssignment?: boolean): CollectionDefinitionAPI<T[]> & CollectionExt & OptionalEntry & GeneralExt;
+        arrayOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): CollectionDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & DefaultDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & CollectionExt & RequiredEntry & GeneralExt;
     },
 }
 
@@ -847,9 +850,9 @@ class UndefinedValue extends ValidationIssue { }
 // Templating API Functions
 //------------------------------------------------
 
-export function GenerateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args: any[]) => any = Object)
+export function generateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args: any[]) => any = Object)
 {
-    const { ValueTemplate, StringTemplate, NumberTemplate, BooleanTemplate, VariadicTemplate, ObjectTemplate, CollectionTemplate, RecordTemplate, ArrayTemplate, LiteralTemplate } = generateTemplatingClasses(BaseClass);
+    const { ValueTemplate, StringTemplate, NumberTemplate, BooleanTemplate, VariadicTemplate, ObjectTemplate, RecordTemplate, ArrayTemplate, LiteralTemplate } = generateTemplatingClasses(BaseClass);
 
     function schema(inputSchema: TemplateObject)
     {
@@ -915,7 +918,12 @@ export function GenerateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args
     } as T;
 }
 
-const defaultAPI = GenerateTemplatingAPI();
+export function flatten<T extends object>(object: T)
+{
+    return Object.assign({}, ...Object.entries(object)) as UnionToIntersection<T[keyof T]>;
+}
+
+const defaultAPI = generateTemplatingAPI();
 export default defaultAPI;
 export const { schema } = defaultAPI.templating;
 export const { string, number, boolean, object } = defaultAPI.primitives;
