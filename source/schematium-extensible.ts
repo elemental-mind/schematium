@@ -2,23 +2,24 @@
 export { generateTemplatingAPI } from "./templating.ts";
 
 // Validation & Parse result classes and runtime values
+export { ValidationIssue } from "./templating.ts";
 export type {
     ValidationResult,
     ParseResult,
     ValidationSuccessResult,
     ParseSuccessResult,
     RejectionResult,
-    ValidationIssue,
 } from "./templating.ts";
 
 // API interfaces for implementing custom fluent definition chains
 export type {
     TemplateAPI,
-    ValidationAPI,
+    SchemaAPI,
     OptionalityAPI,
     DefaultsAPI,
     CheckAPI,
     CollectionTemplateAPI,
+    ValidationAPI,
 } from "./templating.ts";
 
 // Template object types and type inference utilities
