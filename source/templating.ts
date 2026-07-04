@@ -922,6 +922,4 @@ export function generateTemplatingAPI<GeneralExt = {}, TemplateExt = {}, Primiti
     return { schema, string, number, boolean, object, valueOf, oneOf, record, recordOf, array, arrayOf };
 }
 
-const defaultAPI = generateTemplatingAPI();
-export default defaultAPI;
-export const { schema, string, number, boolean, object, valueOf, oneOf, record, recordOf, array, arrayOf } = defaultAPI;
+export const { schema, string, number, boolean, object, valueOf, oneOf, record, recordOf, array, arrayOf } = generateTemplatingAPI();
