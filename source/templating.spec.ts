@@ -1,6 +1,14 @@
 import * as assert from "node:assert";
 import { generateTemplatingAPI } from "./templating.ts";
 import type { ParseResult, TemplateObject, ValidationAPI, ValidationResult, ValidationSettings, ValidationTolerances, ValueType } from "./templating.ts";
+import { Debug } from "unitium";
+import type { ParseSuccessResult } from "./templating.ts";
+
+function assertParseSuccess<T>(result: ParseResult<T>, expectedValue: T): void
+{
+    assert.strictEqual(result.success, true);
+    assert.deepStrictEqual((result as ParseSuccessResult<T>).value, expectedValue);
+}
 
 export interface ValidationAPIInjection
 {
@@ -80,13 +88,13 @@ export class PrimitiveDefnitionTests
     parsesStringValue()
     {
         const t = string();
-        assert.deepStrictEqual(t.parseString("hello"), { success: true, value: "hello" });
+        assertParseSuccess(t.parseString("hello"), "hello");
     }
 
     parsesNumberValue()
     {
         const t = number();
-        assert.deepStrictEqual(t.parseString("42"), { success: true, value: 42 });
+        assertParseSuccess(t.parseString("42"), 42);
     }
 
     throwsOnInvalidNumber()
@@ -98,15 +106,15 @@ export class PrimitiveDefnitionTests
     parsesBooleanTrue()
     {
         const t = boolean();
-        assert.deepStrictEqual(t.parseString("true"), { success: true, value: true });
-        assert.deepStrictEqual(t.parseString("1"), { success: true, value: true });
+        assertParseSuccess(t.parseString("true"), true);
+        assertParseSuccess(t.parseString("1"), true);
     }
 
     parsesBooleanFalse()
     {
         const t = boolean();
-        assert.deepStrictEqual(t.parseString("false"), { success: true, value: false });
-        assert.deepStrictEqual(t.parseString("0"), { success: true, value: false });
+        assertParseSuccess(t.parseString("false"), false);
+        assertParseSuccess(t.parseString("0"), false);
     }
 
     throwsOnInvalidBoolean()
@@ -156,14 +164,14 @@ export class VariadicDefinitionTests
     {
         // number (priority 0) is tried before string (priority 2) → "42" → 42
         const t = valueOf(number, string);
-        assert.deepStrictEqual(t.parseString("42"), { success: true, value: 42 });
+        assertParseSuccess(t.parseString("42"), 42);
     }
 
     stringIsFallbackWhenNumberCannotParse()
     {
         // number fails on "hello", string catches it
         const t = valueOf(number, string);
-        assert.deepStrictEqual(t.parseString("hello"), { success: true, value: "hello" });
+        assertParseSuccess(t.parseString("hello"), "hello");
     }
 
     userPassedOrderDoesNotAffectParsePriority()
@@ -171,7 +179,7 @@ export class VariadicDefinitionTests
         // Even when string is listed first, number (priority 0) is tried before
         // string (priority 2), so "42" parses as number 42.
         const t = valueOf(string, number);
-        assert.deepStrictEqual(t.parseString("42"), { success: true, value: 42 });
+        assertParseSuccess(t.parseString("42"), 42);
     }
 
     parsesBooleanTrueFromString()
@@ -179,15 +187,15 @@ export class VariadicDefinitionTests
         // number (priority 0) tried first — succeeds on "1" (→ 1), fails on "true";
         // boolean (priority 1) catches "true"
         const t = valueOf(number, boolean);
-        assert.deepStrictEqual(t.parseString("true"), { success: true, value: true });
-        assert.deepStrictEqual(t.parseString("1"), { success: true, value: 1 });
+        assertParseSuccess(t.parseString("true"), true);
+        assertParseSuccess(t.parseString("1"), 1);
     }
 
     parsesBooleanFalseFromString()
     {
         const t = valueOf(boolean);
-        assert.deepStrictEqual(t.parseString("false"), { success: true, value: false });
-        assert.deepStrictEqual(t.parseString("0"), { success: true, value: false });
+        assertParseSuccess(t.parseString("false"), false);
+        assertParseSuccess(t.parseString("0"), false);
     }
 
     singleNumberTypeThrowsOnInvalidString()
@@ -199,15 +207,15 @@ export class VariadicDefinitionTests
     singleStringTypeReturnsIdentity()
     {
         const t = valueOf(string);
-        assert.deepStrictEqual(t.parseString("anything"), { success: true, value: "anything" });
+        assertParseSuccess(t.parseString("anything"), "anything");
     }
 
     emptyStringParsesAsStringWhenNumberIsPermitted()
     {
         // Number("") === 0, which is finite, but parseRaw guards against empty strings
         const t = valueOf(number, string);
-        assert.deepStrictEqual(t.parseString(""), { success: true, value: "" });
-        assert.deepStrictEqual(t.parseString(" "), { success: true, value: " " });
+        assertParseSuccess(t.parseString(""), "");
+        assertParseSuccess(t.parseString(" "), " ");
     }
 }
 
@@ -545,7 +553,7 @@ export class RecordDefinitionTests
     {
         const t = recordOf(string);
         const result = t.parseString('{"a":"x"}');
-        assert.deepStrictEqual(result, { success: true, value: { a: "x" } });
+        assertParseSuccess(result, { a: "x" });
     }
 }
 
@@ -590,7 +598,7 @@ export class ArrayDefinitionTests
     parsesArrayFromJson()
     {
         const t = arrayOf(number);
-        assert.deepStrictEqual(t.parseString("[1, 2, 3]"), { success: true, value: [1, 2, 3] });
+        assertParseSuccess(t.parseString("[1, 2, 3]"), [1, 2, 3]);
     }
 }
 
