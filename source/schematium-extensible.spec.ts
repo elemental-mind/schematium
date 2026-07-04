@@ -56,8 +56,9 @@ export class DefinitionApiExtensionTests
         assert.throws(() => defaultAPI.primitives.string().tag("foo"));
 
         // With the extension type applied, .tag() should be available at the type level
-        const { string } = generateTemplatingAPI<{}, PrimitiveExtension>(PrimitiveExtension);
+        const { string } = generateTemplatingAPI<{}, {}, PrimitiveExtension>(PrimitiveExtension);
         string().optional.tag("foo");
+        string().withDefault("whatever").tag("foo");
     }
 
     valueTemplateShouldReflectAddedInterfaceCalls()
