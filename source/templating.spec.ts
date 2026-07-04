@@ -1,8 +1,7 @@
 import * as assert from "node:assert";
-import { generateTemplatingAPI } from "./templating.ts";
-import type { ParseResult, TemplateObject, ValidationAPI, ValidationResult, ValidationSettings, ValidationTolerances, ValueType } from "./templating.ts";
+import type { ParseResult, ParseSuccessResult, TemplateObject, ValidationAPI, ValidationSettings, ValidationSuccessResult, ValidationTolerances, ValueType } from "./templating.ts";
+import { generateTemplatingAPI, RejectionResult, ValidationIssue, ValidationResult } from "./templating.ts";
 import { Debug } from "unitium";
-import type { ParseSuccessResult } from "./templating.ts";
 
 function assertParseSuccess<T>(result: ParseResult<T>, expectedValue: T): void
 {
@@ -10,7 +9,7 @@ function assertParseSuccess<T>(result: ParseResult<T>, expectedValue: T): void
     assert.deepStrictEqual((result as ParseSuccessResult<T>).value, expectedValue);
 }
 
-export interface ValidationAPIInjection
+export interface InjectionSchemaAPI
 {
     isOptional: boolean;
     check(value: unknown, settings?: ValidationTolerances): value is ValueType<this>;
@@ -19,7 +18,7 @@ export interface ValidationAPIInjection
     getDefault(): Partial<ValueType<this>> | undefined;
 }
 
-const { schema, string, number, boolean, object, valueOf, oneOf, record, recordOf, array, arrayOf } = generateTemplatingAPI<ValidationAPIInjection>();
+const { schema, string, number, boolean, object, valueOf, oneOf, record, recordOf, array, arrayOf } = generateTemplatingAPI<InjectionSchemaAPI>();
 
 const SubTemplate = {
     sampleValue: string(),
@@ -935,5 +934,740 @@ export class DefaultCloneTests
     {
         const t = string();
         assert.strictEqual(t.getDefault(), undefined);
+    }
+}
+
+// ============================================================
+// Thorough validation — validate() with mode: "thorough"
+// ============================================================
+
+export class ThoroughValidationTests
+{
+    validateReturnsSuccessResultForValidValue()
+    {
+        const t = schema({ name: string(), age: number() });
+        const result = t.validate({ name: "Alice", age: 30 }, { mode: "thorough" });
+
+        assert.strictEqual(result.success, true);
+    }
+
+    validateReturnsRejectionResultForInvalidValue()
+    {
+        const t = schema({ name: string(), age: number() });
+        const result = t.validate({ name: 42, age: "not-a-number" }, { mode: "thorough" });
+
+        assert.strictEqual(result.success, false);
+        assert.strictEqual(result instanceof RejectionResult, true, "expected result to be a RejectionResult");
+        assert.strictEqual((result as RejectionResult).issues.length, 2, "expected 2 issues for two invalid fields");
+    }
+
+    thoroughModeCollectsAllIssuesNotJustFirst()
+    {
+        const t = schema({
+            a: string(),
+            b: number(),
+            c: boolean(),
+        });
+
+        const result = t.validate({ a: 123, b: "wrong", c: "also-wrong" }, { mode: "thorough" });
+
+        assert.strictEqual(result.success, false);
+        const issues = (result as RejectionResult).issues;
+        // At least 3 type mismatches (a, b, c)
+        assert.strictEqual(issues.length, 3, `Expected 3 issues but got ${issues.length}`);
+    }
+
+    fastModeStopsAtFirstIssue()
+    {
+        const t = schema({
+            a: string(),
+            b: number(),
+            c: boolean(),
+        });
+
+        const result = t.validate({ a: 123, b: "wrong", c: "also-wrong" }, { mode: "fastNoIssueReport" });
+
+        assert.strictEqual(result.success, false);
+        const issues = (result as RejectionResult).issues;
+        // Fast mode produces an empty issues array (no issue reporting)
+        assert.strictEqual(issues.length, 0);
+    }
+
+    thoroughModeReportsMissingRequiredMembers()
+    {
+        const t = schema({
+            required: string(),
+            optional: string("default"),
+        });
+
+        const result = t.validate({}, { mode: "thorough" });
+
+        assert.strictEqual(result.success, false);
+        const issues = (result as RejectionResult).issues;
+        assert.strictEqual(issues.some(i => i.kind === "MissingMember"), true, "expected at least one MissingMember issue");
+    }
+
+    thoroughModeReportsUnknownMembers()
+    {
+        const t = schema({ known: string() });
+
+        const result = t.validate({ known: "ok", unknown: "extra" }, { mode: "thorough" });
+
+        assert.strictEqual(result.success, false);
+        const issues = (result as RejectionResult).issues;
+        assert.strictEqual(issues.some(i => i.kind === "UnknownMember"), true, "expected at least one UnknownMember issue");
+    }
+
+    thoroughModeReportsTypeMismatch()
+    {
+        const t = schema({ value: number() });
+
+        const result = t.validate({ value: "not-a-number" }, { mode: "thorough" });
+
+        assert.strictEqual(result.success, false);
+        const issues = (result as RejectionResult).issues;
+        assert.strictEqual(issues.some(i => i.kind === "TypeMismatch"), true, "expected at least one TypeMismatch issue");
+    }
+
+    thoroughModeReportsUndefinedValue()
+    {
+        const t = schema({ required: string() });
+
+        const result = t.validate({ required: undefined }, { mode: "thorough" });
+
+        assert.strictEqual(result.success, false);
+        const issues = (result as RejectionResult).issues;
+        assert.strictEqual(issues.some(i => i.kind === "UndefinedValue"), true, "expected at least one UndefinedValue issue");
+    }
+
+    validateDefaultsToFastMode()
+    {
+        const t = schema({ a: string(), b: number() });
+
+        // Without mode specified, defaults to fastNoIssueReport
+        const result = t.validate({ a: 123, b: "wrong" });
+
+        assert.strictEqual(result.success, false);
+        const issues = (result as RejectionResult).issues;
+        assert.strictEqual(issues.length, 0);
+    }
+}
+
+// ============================================================
+// Validation issue structure
+// ============================================================
+
+export class ValidationIssueTests
+{
+    issueHasKindDerivedFromClassName()
+    {
+        const t = schema({ value: number() });
+        const result = t.validate({ value: "wrong" }, { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.issues.length > 0, true, "expected at least one issue");
+        assert.strictEqual(result.issues[0].kind, "TypeMismatch");
+    }
+}
+
+// ============================================================
+// Path tracing in thorough mode
+// ============================================================
+
+export class PathTracingTests
+{
+    nestedObjectReportsPath()
+    {
+        const t = schema({
+            nested: {
+                value: number(),
+            },
+        });
+
+        const result = t.validate({ nested: { value: "wrong" } }, { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        const issue = result.issues.find(i => i.kind === "TypeMismatch");
+        assert.notStrictEqual(issue, undefined, "expected a TypeMismatch issue");
+        assert.strictEqual(issue!.path, "nested.value");
+    }
+
+    deeplyNestedObjectReportsFullPath()
+    {
+        const t = schema({
+            level1: {
+                level2: {
+                    level3: {
+                        value: string(),
+                    },
+                },
+            },
+        });
+
+        const result = t.validate({ level1: { level2: { level3: { value: 42 } } } }, { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        const issue = result.issues.find(i => i.kind === "TypeMismatch");
+        assert.notStrictEqual(issue, undefined, "expected a TypeMismatch issue for deeply nested value");
+        assert.strictEqual(issue!.path, "level1.level2.level3.value");
+    }
+
+    missingMemberReportsPath()
+    {
+        const t = schema({
+            nested: {
+                required: number(),
+            },
+        });
+
+        const result = t.validate({ nested: {} }, { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        const issue = result.issues.find(i => i.kind === "MissingMember");
+        assert.notStrictEqual(issue, undefined, "expected a MissingMember issue");
+        assert.strictEqual(issue!.path, "nested.required");
+    }
+
+    arrayEntryReportsPath()
+    {
+        const t = schema({
+            items: arrayOf(number),
+        });
+
+        const result = t.validate({ items: [1, "wrong", 3] }, { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        const issue = result.issues.find(i => i.kind === "TypeMismatch");
+        assert.notStrictEqual(issue, undefined, "expected a TypeMismatch issue for array entry");
+        assert.strictEqual(issue!.path, "items.1");
+    }
+
+    recordEntryReportsPath()
+    {
+        const t = schema({
+            data: recordOf(number),
+        });
+
+        const result = t.validate({ data: { a: 1, b: "wrong" } }, { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        const issue = result.issues.find(i => i.kind === "TypeMismatch");
+        assert.notStrictEqual(issue, undefined, "expected a TypeMismatch issue for record entry");
+        assert.strictEqual(issue!.path, "data.b");
+    }
+
+    multipleIssuesCollectAllPaths()
+    {
+        const t = schema({
+            nested: {
+                a: string(),
+                b: number(),
+            },
+        });
+
+        const result = t.validate({ nested: { a: 42, b: "wrong" } }, { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.strictEqual(result.issues.length >= 2, true, "expected at least 2 issues for nested type mismatches");
+        const paths = result.issues.map(i => i.path).filter(Boolean);
+        assert.strictEqual(paths.includes("nested.a"), true, "expected path 'nested.a' in issues");
+        assert.strictEqual(paths.includes("nested.b"), true, "expected path 'nested.b' in issues");
+    }
+}
+
+// ============================================================
+// oneOf — literal template
+// ============================================================
+
+export class OneOfDefinitionTests
+{
+    acceptsMatchingStringLiterals()
+    {
+        const t = oneOf("open", "closed", "pending");
+
+        assert.strictEqual(t.check("open"), true);
+        assert.strictEqual(t.check("closed"), true);
+        assert.strictEqual(t.check("pending"), true);
+    }
+
+    rejectsNonMatchingStringLiteral()
+    {
+        const t = oneOf("open", "closed");
+
+        assert.strictEqual(t.check("invalid"), false);
+        assert.strictEqual(t.check(""), false);
+    }
+
+    acceptsMatchingNumberLiterals()
+    {
+        const t = oneOf(1, 2, 3);
+
+        assert.strictEqual(t.check(1), true);
+        assert.strictEqual(t.check(2), true);
+        assert.strictEqual(t.check(3), true);
+    }
+
+    rejectsNonMatchingNumberLiteral()
+    {
+        const t = oneOf(1, 2, 3);
+
+        assert.strictEqual(t.check(4), false);
+        assert.strictEqual(t.check(0), false);
+    }
+
+    rejectsWrongType()
+    {
+        const t = oneOf("a", "b");
+
+        assert.strictEqual(t.check(42), false);
+        assert.strictEqual(t.check(true), false);
+        assert.strictEqual(t.check(null), false);
+        assert.strictEqual(t.check(undefined), false);
+    }
+
+    parsesMatchingStringLiteral()
+    {
+        const t = oneOf("yes", "no");
+
+        assertParseSuccess(t.parseString("yes"), "yes");
+        assertParseSuccess(t.parseString("no"), "no");
+    }
+
+    parsesMatchingNumberLiteral()
+    {
+        const t = oneOf(10, 20, 30);
+
+        assertParseSuccess(t.parseString("10"), 10);
+        assertParseSuccess(t.parseString("20"), 20);
+    }
+
+    rejectsParseOfNonMatchingValue()
+    {
+        const t = oneOf("yes", "no");
+
+        assert.strictEqual(t.parseString("maybe").success, false);
+    }
+
+    rejectsParseOfNonMatchingNumber()
+    {
+        const t = oneOf(1, 2, 3);
+
+        assert.strictEqual(t.parseString("4").success, false);
+    }
+
+    rejectsParseOfInvalidNumberString()
+    {
+        const t = oneOf(1, 2, 3);
+
+        assert.strictEqual(t.parseString("abc").success, false);
+    }
+
+    thoroughModeReportsLiteralMismatch()
+    {
+        const t = oneOf("a", "b");
+
+        const result = t.validate("c", { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.strictEqual(result.issues.length > 0, true, "expected at least one issue for literal mismatch");
+        assert.strictEqual(result.issues[0].kind, "UnknownValue");
+    }
+
+    mixedStringAndNumberLiterals()
+    {
+        // oneOf only accepts string | number, so mixing is allowed
+        const t = oneOf("yes", 1);
+
+        assert.strictEqual(t.check("yes"), true);
+        assert.strictEqual(t.check(1), true);
+        assert.strictEqual(t.check("1"), false);
+        assert.strictEqual(t.check("no"), false);
+    }
+}
+
+// ============================================================
+// Validator-based custom validators
+// ============================================================
+
+export class ValidatorTests
+{
+    acceptsBooleanValidator()
+    {
+        const t = number().accepts((v: number) => v > 0);
+
+        assert.strictEqual(t.check(5), true);
+        assert.strictEqual(t.check(-1), false);
+    }
+
+    acceptsValidator()
+    {
+        const t = number().accepts((v: number, validator: ValidationAPI) =>
+        {
+            if (v <= 0)
+                validator.rejectWith(ValidationIssue, "Value must be positive");
+        });
+
+        assert.strictEqual(t.check(5), true);
+        assert.strictEqual(t.check(-1), false);
+    }
+
+    validatorReportsCustomMessage()
+    {
+        const t = number().accepts((v: number, validator: ValidationAPI) =>
+        {
+            if (v <= 0)
+                validator.rejectWith(ValidationIssue, "Value must be positive");
+        });
+
+        const result = t.validate(-1, { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.strictEqual(result.issues.length > 0, true, "expected at least one issue for custom validator rejection");
+        assert.strictEqual(result.issues[0].message, "Value must be positive");
+    }
+
+    booleanValidatorReportsDefaultMessage()
+    {
+        const t = number().accepts((v: number) => v > 0);
+
+        const result = t.validate(-1, { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.strictEqual(result.issues.length > 0, true, "expected at least one issue for boolean validator rejection");
+        assert.strictEqual(result.issues[0].message!.includes("Custom validation failed"), true, "expected default custom validation failure message");
+    }
+
+    acceptsEntriesValidator()
+    {
+        const t = arrayOf(number).acceptsEntries((key: string | number, value: number, validator: ValidationAPI) =>
+        {
+            if (value < 0)
+                validator.rejectWith(ValidationIssue, `Entry at ${key} must be non-negative`);
+        });
+
+        assert.strictEqual(t.check([1, 2, 3]), true);
+        assert.strictEqual(t.check([1, -1, 3]), false);
+    }
+
+    acceptsEntriesReportsCustomMessage()
+    {
+        const t = arrayOf(number).acceptsEntries((key: string | number, value: number, validator: ValidationAPI) =>
+        {
+            if (value < 0)
+                validator.rejectWith(ValidationIssue, `Entry at ${key} must be non-negative`);
+        });
+
+        const result = t.validate([1, -1], { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.strictEqual(result.issues.length > 0, true, "expected at least one issue for acceptsEntries rejection");
+        assert.strictEqual(result.issues[0].message!.includes("must be non-negative"), true, "expected non-negative validation message");
+    }
+
+    booleanAcceptsEntriesRejectsOnFalse()
+    {
+        const t = arrayOf(number).acceptsEntries((key: string | number, value: number) => value > 0);
+
+        assert.strictEqual(t.check([1, 2, 3]), true);
+        assert.strictEqual(t.check([-1]), false);
+    }
+
+    acceptsEntriesOnRecord()
+    {
+        const t = recordOf(string).acceptsEntries((key: string | number, value: string, validator: ValidationAPI) =>
+        {
+            if (value.length === 0)
+                validator.rejectWith(ValidationIssue, `Entry '${key}' must not be empty`);
+        });
+
+        assert.strictEqual(t.check({ a: "hello", b: "world" }), true);
+        assert.strictEqual(t.check({ a: "hello", b: "" }), false);
+    }
+
+    validatorSkipsWhenTypeMismatch()
+    {
+        // If type validation fails, the custom validator should not be called
+        let validatorCalled = false;
+        const t = number().accepts((v: number, validator: ValidationAPI) =>
+        {
+            validatorCalled = true;
+        });
+
+        t.check("not-a-number");
+        assert.strictEqual(validatorCalled, false);
+    }
+}
+
+// ============================================================
+// Parse result structure
+// ============================================================
+
+export class ParseResultIssueTests
+{
+    parseStringSuccessReturnsParseSuccessResult()
+    {
+        const t = string();
+        const result = t.parseString("hello");
+
+        assert.strictEqual(result.success, true);
+        assert.strictEqual("value" in (result as ParseSuccessResult<string>), true, "expected 'value' property in success result");
+        assert.strictEqual((result as ParseSuccessResult<string>).value, "hello");
+    }
+
+    parseStringFailureReturnsRejectionResult()
+    {
+        const t = number();
+        const result = t.parseString("not-a-number");
+
+        assert.strictEqual(result.success, false);
+        assert.strictEqual(result instanceof RejectionResult, true, "expected parse failure to return RejectionResult");
+        assert.strictEqual("issues" in result, true, "expected 'issues' property in rejection result");
+    }
+
+    parseStringFailureHasIssues()
+    {
+        const t = number();
+        const result = t.parseString("not-a-number", { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.issues.length > 0, true, "expected at least one issue for invalid number parse");
+        assert.strictEqual(result.issues[0].kind, "ParseError");
+    }
+
+    parseStringFailureReportsMessage()
+    {
+        const t = boolean();
+        const result = t.parseString("yes", { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.issues.length > 0, true, "expected at least one issue for invalid boolean parse");
+        assert.strictEqual(result.issues[0].message!.includes("yes"), true, "expected parse error message to include 'yes'");
+    }
+
+    parseStringObjectInvalidJsonReportsParseError()
+    {
+        const t = schema({ name: string() });
+        const result = t.parseString("{invalid json", { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.issues.length > 0, "expected at least one issue for invalid object member");
+    }
+
+    parseStringObjectWithInvalidMemberReportsTypeMismatch()
+    {
+        const t = schema({ count: number() });
+        const result = t.parseString('{"count":"not-a-number"}', { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.issues.length > 0, "expected at least one issue for invalid object JSON parse");
+        assert.strictEqual(result.issues[0].kind, "TypeMismatch");
+        assert.strictEqual(result.issues[0].path, "count");
+    }
+
+    parseStringThoroughModeCollectsAllIssues()
+    {
+        const t = schema({ a: number(), b: boolean() });
+        const result = t.parseString('{"a":"wrong","b":"also-wrong"}', { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.issues.length >= 2, "expected at least 2 issues for invalid JSON fields");
+    }
+
+    parseStringArrayInvalidJsonReportsParseError()
+    {
+        const t = arrayOf(number);
+        const result = t.parseString("[invalid", { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.issues.length > 0, "expected at least one issue for invalid array JSON");
+        assert.strictEqual(result.issues[0].kind, "ParseError");
+    }
+
+    parseStringArrayWithInvalidElementReportsTypeMismatch()
+    {
+        const t = arrayOf(number);
+        // JSON parse succeeds but validation of elements fails
+        const result = t.parseString('["not-a-number"]', { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.issues.length > 0, "expected at least one issue for invalid array element");
+    }
+
+    parseStringRecordInvalidJsonReportsParseError()
+    {
+        const t = recordOf(string);
+        const result = t.parseString("{bad", { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.issues.length > 0, "expected at least one issue for invalid record JSON");
+        assert.strictEqual(result.issues[0].kind, "ParseError");
+    }
+}
+
+// ============================================================
+// Object factory
+// ============================================================
+
+export class ObjectFactoryTests
+{
+    objectFactoryCreatesValidTemplate()
+    {
+        const t = object({
+            name: string(),
+            age: number(),
+        });
+
+        assert.strictEqual(t.check({ name: "Alice", age: 30 }), true);
+        assert.strictEqual(t.check({ name: "Alice" }), false);
+    }
+
+    objectFactoryWithDefaults()
+    {
+        const t = object({
+            items: array([1, 2, 3]),
+            label: string("test"),
+        });
+
+        assert.deepStrictEqual(t.getDefault(), { items: [1, 2, 3], label: "test" });
+    }
+
+    objectFactoryValidateReturnsIssues()
+    {
+        const t = object({
+            value: number(),
+        });
+
+        const result = t.validate({ value: "wrong" }, { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.issues.length > 0, "expected at least one issue from object factory validation");
+        assert.strictEqual(result.issues[0].kind, "TypeMismatch");
+    }
+}
+
+// ============================================================
+// Validate on primitive types with thorough mode
+// ============================================================
+
+export class PrimitiveThoroughValidationTests
+{
+    stringThoroughReportsTypeMismatch()
+    {
+        const t = string();
+        const result = t.validate(42, { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.issues.length > 0, "expected at least one string type mismatch issue");
+        assert.strictEqual(result.issues[0].kind, "TypeMismatch");
+    }
+
+    numberThoroughReportsTypeMismatch()
+    {
+        const t = number();
+        const result = t.validate("not-a-number", { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.issues.length > 0, "expected at least one number type mismatch issue");
+        assert.strictEqual(result.issues[0].kind, "TypeMismatch");
+    }
+
+    numberThoroughReportsNonFinite()
+    {
+        const t = number();
+        const result = t.validate(NaN, { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.issues.length > 0, "expected at least one non-finite number issue");
+        assert.strictEqual(result.issues[0].kind, "TypeMismatch");
+    }
+
+    numberThoroughReportsInfinity()
+    {
+        const t = number();
+        const result = t.validate(Infinity, { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.issues.length > 0, "expected at least one infinity issue");
+        assert.strictEqual(result.issues[0].kind, "TypeMismatch");
+    }
+
+    booleanThoroughReportsTypeMismatch()
+    {
+        const t = boolean();
+        const result = t.validate("not-a-boolean", { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.issues.length > 0, "expected at least one boolean type mismatch issue");
+        assert.strictEqual(result.issues[0].kind, "TypeMismatch");
+    }
+
+    variadicThoroughReportsUnknownValue()
+    {
+        const t = valueOf(number, string);
+        const result = t.validate(true, { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.issues.length > 0, "expected at least one unknown value issue");
+        assert.strictEqual(result.issues[0].kind, "UnknownValue");
+    }
+
+    requiredPrimitiveReportsUndefinedValue()
+    {
+        const t = number();
+        const result = t.validate(undefined, { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.issues.length > 0, "expected at least one undefined value issue");
+        assert.strictEqual(result.issues[0].kind, "UndefinedValue");
+    }
+
+    optionalPrimitiveAcceptsUndefined()
+    {
+        const t = number(42);
+        const result = t.validate(undefined, { mode: "thorough" });
+
+        assert.strictEqual(result.success, true);
+    }
+}
+
+// ============================================================
+// Thorough validation on collections
+// ============================================================
+
+export class CollectionThoroughValidationTests
+{
+    arrayThoroughReportsAllInvalidEntries()
+    {
+        const t = arrayOf(number);
+        const result = t.validate(["a", "b", 3], { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.issues.length >= 2, "expected at least 2 invalid array entry issues");
+    }
+
+    recordThoroughReportsAllInvalidEntries()
+    {
+        const t = recordOf(number);
+        const result = t.validate({ a: "wrong", b: "also-wrong", c: 3 }, { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.issues.length >= 2, "expected at least 2 invalid record entry issues");
+    }
+
+    recordThoroughRejectsNonObject()
+    {
+        const t = recordOf(string);
+        const result = t.validate("not-an-object", { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.issues.length > 0, "expected at least one type mismatch issue for non-object");
+        assert.strictEqual(result.issues[0].kind, "TypeMismatch");
+    }
+
+    arrayThoroughRejectsNonArray()
+    {
+        const t = arrayOf(number);
+        const result = t.validate({ not: "array" }, { mode: "thorough" }) as RejectionResult;
+
+        assert.strictEqual(result.success, false);
+        assert.ok(result.issues.length > 0, "expected at least one type mismatch issue for non-array");
+        assert.strictEqual(result.issues[0].kind, "TypeMismatch");
     }
 }
