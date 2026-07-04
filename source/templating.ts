@@ -262,7 +262,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
         parseString<T>(value: string, settings: ValidationSettings = Validator.DefaultSettings): ParseResult<T>
         {
-            const context = ThoroughValidator.withSettings(settings);
+            const context = Validator.withSettings(settings);
             const parsed = this.parseWithContext<T>(value, context);
             context.release();
             return parsed;
