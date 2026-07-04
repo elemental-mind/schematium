@@ -131,28 +131,23 @@ export interface TemplatingAPI<
     GeneralExt = {}
 >
 {
-    templating: {
-        schema<T extends TemplateObject>(inputSchema: T): ValueTemplateAPI<InferSchemaType<T>> & TemplateExt & GeneralExt;
-    },
-    primitives: {
-        string(): ValueDefinitionAPI<string> & DefaultDefinitionAPI<string> & PrimitiveExt & RequiredEntry & GeneralExt;
-        string(defaultValue: string): ValueDefinitionAPI<string> & PrimitiveExt & OptionalEntry & GeneralExt;
-        number(): ValueDefinitionAPI<number> & DefaultDefinitionAPI<number> & PrimitiveExt & RequiredEntry & GeneralExt;
-        number(defaultValue: number): ValueDefinitionAPI<number> & PrimitiveExt & OptionalEntry & GeneralExt;
-        boolean(): ValueDefinitionAPI<boolean> & DefaultDefinitionAPI<boolean> & PrimitiveExt & RequiredEntry & GeneralExt;
-        boolean(defaultValue: boolean): ValueDefinitionAPI<boolean> & PrimitiveExt & OptionalEntry & GeneralExt;
-        object<T extends TemplateObject>(value: T): ValueDefinitionAPI<InferSchemaType<T>> & DefaultDefinitionAPI<InferSchemaType<T>> & PrimitiveExt & RequiredEntry & GeneralExt;
-    },
-    variadics: {
-        valueOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): ValueDefinitionAPI<InferTypeDefinitionType<T[number]>> & DefaultDefinitionAPI<T[number]> & VariadicExt & RequiredEntry & GeneralExt;
-        oneOf<const T extends readonly [string | number, ...(string | number)[]]>(...possibleValues: T): OptionalityDefinitionAPI<T[number]> & DefaultDefinitionAPI<T[number]> & VariadicExt & RequiredEntry & GeneralExt;
-    },
-    collections: {
-        record<T>(defaultValue: Record<string, T>, cloneOnDefaultAssignment?: boolean): CollectionDefinitionAPI<Record<string, T>> & CollectionExt & OptionalEntry & GeneralExt;
-        recordOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): CollectionDefinitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & DefaultDefinitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & CollectionExt & RequiredEntry & GeneralExt;
-        array<T>(defaultValue: T[], cloneOnDefaultAssignment?: boolean): CollectionDefinitionAPI<T[]> & CollectionExt & OptionalEntry & GeneralExt;
-        arrayOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): CollectionDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & DefaultDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & CollectionExt & RequiredEntry & GeneralExt;
-    },
+    schema<T extends TemplateObject>(inputSchema: T): ValueTemplateAPI<InferSchemaType<T>> & TemplateExt & GeneralExt;
+
+    string(): ValueDefinitionAPI<string> & DefaultDefinitionAPI<string> & PrimitiveExt & RequiredEntry & GeneralExt;
+    string(defaultValue: string): ValueDefinitionAPI<string> & PrimitiveExt & OptionalEntry & GeneralExt;
+    number(): ValueDefinitionAPI<number> & DefaultDefinitionAPI<number> & PrimitiveExt & RequiredEntry & GeneralExt;
+    number(defaultValue: number): ValueDefinitionAPI<number> & PrimitiveExt & OptionalEntry & GeneralExt;
+    boolean(): ValueDefinitionAPI<boolean> & DefaultDefinitionAPI<boolean> & PrimitiveExt & RequiredEntry & GeneralExt;
+    boolean(defaultValue: boolean): ValueDefinitionAPI<boolean> & PrimitiveExt & OptionalEntry & GeneralExt;
+    object<T extends TemplateObject>(value: T): ValueDefinitionAPI<InferSchemaType<T>> & DefaultDefinitionAPI<InferSchemaType<T>> & PrimitiveExt & RequiredEntry & GeneralExt;
+
+    valueOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): ValueDefinitionAPI<InferTypeDefinitionType<T[number]>> & DefaultDefinitionAPI<T[number]> & VariadicExt & RequiredEntry & GeneralExt;
+    oneOf<const T extends readonly [string | number, ...(string | number)[]]>(...possibleValues: T): OptionalityDefinitionAPI<T[number]> & DefaultDefinitionAPI<T[number]> & VariadicExt & RequiredEntry & GeneralExt;
+
+    record<T>(defaultValue: Record<string, T>, cloneOnDefaultAssignment?: boolean): CollectionDefinitionAPI<Record<string, T>> & CollectionExt & OptionalEntry & GeneralExt;
+    recordOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): CollectionDefinitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & DefaultDefinitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & CollectionExt & RequiredEntry & GeneralExt;
+    array<T>(defaultValue: T[], cloneOnDefaultAssignment?: boolean): CollectionDefinitionAPI<T[]> & CollectionExt & OptionalEntry & GeneralExt;
+    arrayOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): CollectionDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & DefaultDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & CollectionExt & RequiredEntry & GeneralExt;
 }
 
 //------------------------------------------------
@@ -859,73 +854,60 @@ export function generateTemplatingAPI<T = TemplatingAPI>(BaseClass: new (...args
         return ObjectTemplate.fromTemplateObject(inputSchema);
     }
 
-    function string(defaultValue?: string): any
+    function string(defaultValue?: string)
     {
         return defaultValue !== undefined ? new StringTemplate().withDefault(defaultValue) : new StringTemplate();
     }
 
-    function number(defaultValue?: number): any
+    function number(defaultValue?: number)
     {
         return defaultValue !== undefined ? new NumberTemplate().withDefault(defaultValue) : new NumberTemplate();
     }
 
-    function boolean(defaultValue?: boolean): any
+    function boolean(defaultValue?: boolean)
     {
         return defaultValue !== undefined ? new BooleanTemplate().withDefault(defaultValue) : new BooleanTemplate();
     }
 
-    function valueOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): ValueDefinitionAPI<InferTypeDefinitionType<T[number]>> & RequiredEntry
+    function valueOf(...types: TypeOption[])
     {
-        return ValueTemplate.fromTypeInputs(...types) as any;
+        return ValueTemplate.fromTypeInputs(...types);
     }
 
-    function oneOf<const T extends readonly [string | number, ...(string | number)[]]>(...possibleValues: T): OptionalityDefinitionAPI<T[number]> & RequiredEntry
+    function oneOf(...possibleValues: Literal[])
     {
         const literalTypes = possibleValues.map(value => new LiteralTemplate(value));
-        return new VariadicTemplate<number | string>(...literalTypes) as any;
+        return new VariadicTemplate<number | string>(...literalTypes);
     }
 
-    function object<T extends TemplateObject>(value: T): ValueDefinitionAPI<InferSchemaType<T>> & RequiredEntry
+    function object(value: TemplateObject)
     {
-        return ObjectTemplate.fromTemplateObject(value) as any;
+        return ObjectTemplate.fromTemplateObject(value);
     }
 
-    function record<T>(defaultValue: Record<string, T>, cloneOnDefaultAssignment: boolean = true): CollectionDefinitionAPI<Record<string, T>> & OptionalEntry
+    function record(defaultValue: Record<string, any>, cloneOnDefaultAssignment: boolean = true)
     {
         return RecordTemplate.fromExample<T>(defaultValue).withDefault(defaultValue, cloneOnDefaultAssignment);
     }
 
-    function recordOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): CollectionDefinitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & RequiredEntry
+    function recordOf(...types: TypeOption[])
     {
-        return RecordTemplate.fromTypes(...types) as any;
+        return RecordTemplate.fromTypes(...types);
     }
 
-    function array<T>(defaultValue: T[], cloneOnDefaultAssignment = true): CollectionDefinitionAPI<T[]> & OptionalEntry
+    function array(defaultValue: any[], cloneOnDefaultAssignment = true)
     {
         return ArrayTemplate.fromExample(defaultValue).withDefault(defaultValue, cloneOnDefaultAssignment);
     }
 
-    function arrayOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): CollectionDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & RequiredEntry
+    function arrayOf(...types: TypeOption[])
     {
-        return ArrayTemplate.fromTypes(...types) as any;
+        return ArrayTemplate.fromTypes(...types);
     }
 
-    return {
-        templating: { schema },
-        primitives: { string, number, boolean, object },
-        variadics: { valueOf, oneOf },
-        collections: { record, recordOf, array, arrayOf }
-    } as T;
-}
-
-export function flatten<T extends object>(object: T)
-{
-    return Object.assign({}, ...Object.entries(object)) as UnionToIntersection<T[keyof T]>;
+    return { schema, string, number, boolean, object, valueOf, oneOf, record, recordOf, array, arrayOf } as T;
 }
 
 const defaultAPI = generateTemplatingAPI();
 export default defaultAPI;
-export const { schema } = defaultAPI.templating;
-export const { string, number, boolean, object } = defaultAPI.primitives;
-export const { valueOf, oneOf } = defaultAPI.variadics;
-export const { record, recordOf, array, arrayOf } = defaultAPI.collections;
+export const { schema, string, number, boolean, object, valueOf, oneOf, record, recordOf, array, arrayOf } = defaultAPI;
