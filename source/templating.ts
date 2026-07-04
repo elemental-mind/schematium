@@ -791,26 +791,26 @@ class ThoroughValidator extends Validator
 // Results
 //------------------------------------------------
 
-class ValidationSuccessResult
+export class ValidationSuccessResult
 {
     success = true as const;
 }
 
-class ParseSuccessResult<T> extends ValidationSuccessResult
+export class ParseSuccessResult<T> extends ValidationSuccessResult
 {
     value: T;
 
     constructor(value: T) { super(); this.value = value; }
 }
 
-class RejectionResult
+export class RejectionResult
 {
     success = false as const;
     issues: ValidationIssue[] = [];
 }
 
-type ValidationResult = ValidationSuccessResult | RejectionResult;
-type ParseResult<T> = ParseSuccessResult<T> | RejectionResult;
+export type ValidationResult = ValidationSuccessResult | RejectionResult;
+export type ParseResult<T> = ParseSuccessResult<T> | RejectionResult;
 
 export const ValidationResult = {
     Success: Object.freeze(new ValidationSuccessResult()),
