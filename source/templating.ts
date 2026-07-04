@@ -1,92 +1,36 @@
 //------------------------------------------------
-// Types & Interfaces
+// Interfaces
 //------------------------------------------------
 
-declare const required: unique symbol;
-declare const forceRequired: unique symbol;
+export interface TemplateObject
+{
+    [key: string]: TemplateObjectEntry;
+}
+
 declare const valueType: unique symbol;
-
-// This is exported for extension authors to infer the value definition value type for their own extension functions/members
-export type ValueType<ValueTemplate> =
-    ValueTemplate extends ConfigurationAPI<infer T> ? T :
-    ValueTemplate extends TemplateObject ? InferSchemaType<ValueTemplate> :
-    never;
-
-export type TemplateObjectEntry<T = any> = TemplateObject | ValueConfiguration<T>;
-export type ValueConfiguration<T> = CheckAPI<T> | EntryCheckAPI<T>;
-
-type CollectionEntryType<T> =
-    T extends Record<string, infer E> ? E :
-    T extends Array<infer E> ? E :
-    never;
-
-type TypeOption = PrimitiveTemplate | TemplateObject | ValidationAPI<any> | Literal;
-type PrimitiveTemplate = typeof number | typeof string | typeof boolean;
-type Literal = number | string;
-
-type RequiredEntry = { [required]: true; };
-type StrictlyRequiredEntry = { [forceRequired]: true; };
-type OptionalEntry = { [required]: false; };
-type StrictlyOptionalEntry = { [forceRequired]: false; };
-
-type ForceRequired<T, ForcedState extends boolean> =
-    Omit<T, typeof required | typeof forceRequired> &
-    (ForcedState extends true ? StrictlyRequiredEntry & RequiredEntry : StrictlyOptionalEntry & OptionalEntry);
-
-type SetRequired<T, DefaultState extends boolean> =
-    Omit<T, typeof required | typeof forceRequired> & (
-        T extends StrictlyRequiredEntry ? StrictlyRequiredEntry & RequiredEntry :
-        T extends StrictlyOptionalEntry ? StrictlyOptionalEntry & OptionalEntry :
-        { [required]: DefaultState; }
-    );
-
-export type InferSchemaType<T extends TemplateObject> = { [K in RequiredKeys<T>]: Exclude<ValueType<T[K]>, undefined>; } & { [K in OptionalKeys<T>]?: ValueType<T[K]>; };
-type RequiredKeys<T extends TemplateObject> = { [K in keyof T]-?: T[K] extends RequiredEntry ? K : never }[keyof T];
-type OptionalKeys<T extends TemplateObject> = Exclude<keyof T, RequiredKeys<T>>;
-
-export type InferTypeDefinitionType<T extends TypeOption> =
-    T extends typeof number ? number :
-    T extends typeof string ? string :
-    T extends typeof boolean ? boolean :
-    T extends number | string ? T :
-    T extends TemplateObject ? InferSchemaType<T> :
-    never;
-
-export interface ValidationTolearanceSettings
+export interface SchemaBaseAPI<T>
 {
-    //allowPartial enables checking only partial objects, that don't have all required keys. It only checks types of known keys, not if all required keys are present. Defaults to false. 
-    allowPartial?: boolean;
-    //allowUnknowns ignores keys that are not defined in the schema and lets objects pass that have more keys than defined in the schema. Defaults to false.
-    allowUnknowns?: boolean;
+    [valueType]: T;
 }
 
-export interface ValidationSettings extends ValidationTolearanceSettings
-{
-    //fast validation fails on the first wrong validation and does not report issues, defaults to true
-    mode?: "fastNoIssueReport" | "thorough";
-}
-
-export interface ValidationAPI<T>
+export interface ValidationAPI<T> extends SchemaBaseAPI<T>
 {
     isOptional: boolean;
-    check(value: unknown, settings?: ValidationTolearanceSettings): value is T;
+    check(value: unknown, settings?: ValidationTolerances): value is T;
     validate(value: unknown, settings?: ValidationSettings): ValidationResult;
     parseString<T>(value: string, settings?: ValidationSettings): ParseResult<T>;
     getDefault(): Partial<T> | undefined;
 }
 
-export interface ConfigurationAPI<T>
-{
-    [valueType]: T;
-}
+export interface TemplateAPI<T> extends OptionalityAPI<T>, DefaultsAPI<T>, CheckAPI<T> { };
 
-export interface OptionalityAPI<T> extends ConfigurationAPI<T>
+export interface OptionalityAPI<T> extends SchemaBaseAPI<T>
 {
     required: ForceRequired<this, true>;
     optional: ForceRequired<this, false>;
 }
 
-export interface DefaultsAPI<T> extends ConfigurationAPI<T>
+export interface DefaultsAPI<T> extends SchemaBaseAPI<T>
 {
     withDefault: (defaultValue: T, cloneWhenAssigned?: boolean) => SetRequired<this, false>;
 }
@@ -103,10 +47,72 @@ export interface EntryCheckAPI<T> extends CheckAPI<T>
     acceptsEntries(validator: (key: string | number, value: CollectionEntryType<T>, context: Validator) => void): this;
 }
 
-export interface TemplateObject
+export interface ValidationTolerances
 {
-    [key: string]: TemplateObjectEntry;
+    //allowPartial enables checking only partial objects, that don't have all required keys. It only checks types of known keys, not if all required keys are present. Defaults to false. 
+    allowPartial?: boolean;
+    //allowUnknowns ignores keys that are not defined in the schema and lets objects pass that have more keys than defined in the schema. Defaults to false.
+    allowUnknowns?: boolean;
 }
+
+export interface ValidationSettings extends ValidationTolerances
+{
+    //fast validation fails on the first wrong validation and does not report issues, defaults to true
+    mode?: "fastNoIssueReport" | "thorough";
+}
+
+
+//------------------------------------------------
+// Types
+//------------------------------------------------
+
+export type ValueType<ValueTemplate> =
+    ValueTemplate extends SchemaBaseAPI<infer T> ? T :
+    ValueTemplate extends TemplateObject ? InferSchemaType<ValueTemplate> :
+    never;
+
+export type TemplateObjectEntry = TemplateObject | SchemaBaseAPI<any>;
+
+export type InferSchemaType<T extends TemplateObject> = { [K in RequiredKeys<T>]: Exclude<ValueType<T[K]>, undefined>; } & { [K in OptionalKeys<T>]?: ValueType<T[K]>; };
+
+export type InferTypeDefinitionType<T extends TypeOption> =
+    T extends typeof number ? number :
+    T extends typeof string ? string :
+    T extends typeof boolean ? boolean :
+    T extends number | string ? T :
+    T extends TemplateObject ? InferSchemaType<T> :
+    never;
+
+type CollectionEntryType<T> =
+    T extends Record<string, infer E> ? E :
+    T extends Array<infer E> ? E :
+    never;
+
+type TypeOption = PrimitiveType | TemplateObject | ValidationAPI<any> | LiteralType;
+type PrimitiveType = typeof number | typeof string | typeof boolean;
+type LiteralType = number | string;
+
+declare const required: unique symbol;
+declare const forceRequired: unique symbol;
+
+type RequiredEntry = { [required]: true; };
+type StrictlyRequiredEntry = { [forceRequired]: true; };
+type OptionalEntry = { [required]: false; };
+type StrictlyOptionalEntry = { [forceRequired]: false; };
+
+type RequiredKeys<T extends TemplateObject> = { [K in keyof T]-?: T[K] extends RequiredEntry ? K : never }[keyof T];
+type OptionalKeys<T extends TemplateObject> = Exclude<keyof T, RequiredKeys<T>>;
+
+type ForceRequired<T, ForcedState extends boolean> =
+    Omit<T, typeof required | typeof forceRequired> &
+    (ForcedState extends true ? StrictlyRequiredEntry & RequiredEntry : StrictlyOptionalEntry & OptionalEntry);
+
+type SetRequired<T, DefaultState extends boolean> =
+    Omit<T, typeof required | typeof forceRequired> & (
+        T extends StrictlyRequiredEntry ? StrictlyRequiredEntry & RequiredEntry :
+        T extends StrictlyOptionalEntry ? StrictlyOptionalEntry & OptionalEntry :
+        { [required]: DefaultState; }
+    );
 
 //------------------------------------------------
 // Templating Classes
@@ -143,7 +149,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             if (exampleValues.length === 1)
                 return this.fromExample(exampleValues[0]);
 
-            const identifiedNormalizedTypes = new Set<ValueTemplate<any> | PrimitiveTemplate>();
+            const identifiedNormalizedTypes = new Set<ValueTemplate<any> | PrimitiveType>();
             for (const exampleValue of exampleValues)
             {
                 switch (typeof exampleValue)
@@ -286,7 +292,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
         abstract parseRaw<T>(value: string, context: Validator): T | undefined;
 
-        check(value: unknown, settings?: ValidationTolearanceSettings): value is T
+        check(value: unknown, settings?: ValidationTolerances): value is T
         {
             return this.validate(value, { mode: "fastNoIssueReport", ...settings }).success;
         }
@@ -380,7 +386,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
         }
     }
 
-    class LiteralTemplate<T extends Literal> extends ValueTemplate<T>
+    class LiteralTemplate<T extends LiteralType> extends ValueTemplate<T>
     {
         permittedValue: T;
         permittedValueTemplate: ValueTemplate<T>;
@@ -666,7 +672,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 }
 
 //------------------------------------------------
-// Validation Classes
+// Validation
 //------------------------------------------------
 
 abstract class Validator
@@ -812,7 +818,7 @@ export const ValidationResult = {
 };
 
 //------------------------------------------------
-// Validation Issues
+// Issues
 //------------------------------------------------
 
 export class ValidationIssue
@@ -836,7 +842,7 @@ class UndefinedValue extends ValidationIssue { }
 class ParseError extends ValidationIssue { }
 
 //------------------------------------------------
-// Templating API Functions
+// API Generator
 //------------------------------------------------
 
 export function generateTemplatingAPI<GeneralExt = {}, TemplateExt = {}, PrimitiveExt = {}, VariadicExt = {}, CollectionExt = {}>(BaseClass: new (...args: any[]) => any = Object)
