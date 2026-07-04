@@ -22,7 +22,6 @@ type CollectionEntryType<T> =
 
 type TypeOption = PrimitiveTemplate | TemplateObject | ValidationAPI<any> | Literal;
 type PrimitiveTemplate = typeof number | typeof string | typeof boolean;
-type PrimitiveString = "string" | "boolean" | "number";
 type Literal = number | string;
 
 type RequiredEntry = { [required]: true; };
@@ -64,7 +63,7 @@ export interface ValidationTolearanceSettings
 export interface ValidationSettings extends ValidationTolearanceSettings
 {
     //fast validation fails on the first wrong validation and does not report issues, defaults to true
-    fast?: boolean;
+    mode?: "fastNoIssueReport" | "thorough";
 }
 
 export interface ValidationAPI<T>
@@ -144,7 +143,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             if (exampleValues.length === 1)
                 return this.fromExample(exampleValues[0]);
 
-            const identifiedNormalizedTypes = new Set<PrimitiveString | ValueTemplate<any> | PrimitiveTemplate>();
+            const identifiedNormalizedTypes = new Set<ValueTemplate<any> | PrimitiveTemplate>();
             for (const exampleValue of exampleValues)
             {
                 switch (typeof exampleValue)
@@ -177,7 +176,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
                 return new VariadicTemplate(...templateValues);
         }
 
-        static fromTypeInput(typeOption: TypeOption | PrimitiveString): ValueTemplate<any>
+        static fromTypeInput(typeOption: TypeOption): ValueTemplate<any>
         {
             switch (typeof typeOption)
             {
@@ -289,7 +288,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
         check(value: unknown, settings?: ValidationTolearanceSettings): value is T
         {
-            return this.validate(value, { fast: true, ...settings }).success;
+            return this.validate(value, { mode: "fastNoIssueReport", ...settings }).success;
         }
 
         validate(value: unknown, settings: ValidationSettings = Validator.DefaultSettings): ValidationResult
@@ -672,14 +671,14 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
 abstract class Validator
 {
-    static DefaultSettings = { fast: true, allowPartial: false, allowUnknowns: false };
+    static DefaultSettings: ValidationSettings = { mode: "fastNoIssueReport", allowPartial: false, allowUnknowns: false };
     protected static FastContextCache: FastValidator[] = [];
     protected static ThoroughContextCache: ThoroughValidator[] = [];
 
     static withSettings(settings: ValidationSettings)
     {
         let context;
-        if (settings.fast === false)
+        if (settings.mode === "thorough")
             context = this.ThoroughContextCache.pop() ?? new ThoroughValidator();
         else
             context = this.FastContextCache.pop() ?? new FastValidator();
