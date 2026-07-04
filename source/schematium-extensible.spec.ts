@@ -1,6 +1,6 @@
-import * as assert from "node:assert";
-import { GenerateTemplatingAPI, type TemplatingAPI, ValueType } from "./schematium-extensible.ts";
 import { Debug } from "unitium";
+import * as assert from "node:assert";
+import { generateTemplatingAPI, ValueType } from "./schematium-extensible.ts";
 
 export class BaseClassSubstitutionTests
 {
@@ -12,9 +12,9 @@ export class BaseClassSubstitutionTests
             getBaseInfo() { return "base-info"; }
         }
 
-        const api = GenerateTemplatingAPI<TemplatingAPI<MyBase>>(MyBase);
-        const t = api.templating.schema({
-            sample: api.primitives.string("default").required,
+        const { schema, string } = generateTemplatingAPI<MyBase>(MyBase);
+        const t = schema({
+            sample: string("default").required,
         });
 
         assert.strictEqual(t.metadata, "custom-base");
@@ -30,9 +30,9 @@ export class BaseClassSubstitutionTests
             track() { this.calls.push("track"); return this; }
         }
 
-        const api = GenerateTemplatingAPI<TemplatingAPI<TrackingBase>>(TrackingBase);
-        const t = api.templating.schema({
-            test: api.primitives.string("default")
+        const { schema, string } = generateTemplatingAPI<TrackingBase>(TrackingBase);
+        const t = schema({
+            test: string("default")
         });
 
         assert.ok(t.calls.includes("constructor"), "Base class constructor should have been called");
@@ -51,13 +51,13 @@ export class DefinitionApiExtensionTests
             tag(tag: string): this { return this; }
         }
 
-        const defaultAPI = GenerateTemplatingAPI();
+        const defaultAPI = generateTemplatingAPI();
         // @ts-expect-error - .tag() does not exist on the default TemplatingAPI
         assert.throws(() => defaultAPI.primitives.string().tag("foo"));
 
         // With the extension type applied, .tag() should be available at the type level
-        const extendedAPI = GenerateTemplatingAPI<TemplatingAPI<{}, PrimitiveExtension>>(PrimitiveExtension);
-        extendedAPI.primitives.string().optional.tag("foo");
+        const { string } = generateTemplatingAPI<{}, PrimitiveExtension>(PrimitiveExtension);
+        string().optional.tag("foo");
     }
 
     valueTemplateShouldReflectAddedInterfaceCalls()
@@ -72,8 +72,8 @@ export class DefinitionApiExtensionTests
             }
         }
 
-        const api = GenerateTemplatingAPI<TemplatingAPI<{}, Taggable>>(Taggable);
-        const result = api.primitives.number(42).tag("my-number");
+        const { number } = generateTemplatingAPI<{}, {}, Taggable>(Taggable);
+        const result = number(42).tag("my-number");
 
         assert.strictEqual(result.tagValue, "my-number");
     }
@@ -85,13 +85,13 @@ export class DefinitionApiExtensionTests
             typeDependentClosure(closure: (value: ValueType<this>) => boolean) { return this; };
         }
 
-        const api = GenerateTemplatingAPI<TemplatingAPI<{}, Extension, Extension, Extension>>(Extension);
-        api.primitives.number(42).typeDependentClosure((value: number) => true);
+        const { number, string, valueOf } = generateTemplatingAPI<{}, Extension, Extension, Extension>(Extension);
+        number(42).typeDependentClosure(value => value === 100);
         //@ts-expect-error should throw because boolean =! number
-        api.primitives.number(42).typeDependentClosure((value: boolean) => true);
+        number(42).typeDependentClosure(value => value === false);
 
-        api.variadics.valueOf(api.primitives.number, api.primitives.string).typeDependentClosure((value: string | number) => true);
+        valueOf(number, string).typeDependentClosure((value: string | number) => true);
         //@ts-expect-error should throw because boll | number  =! number | string
-        api.variadics.valueOf(api.primitives.number, api.primitives.string).typeDependentClosure((value: bool | number) => true);
+        valueOf(number, string).typeDependentClosure((value: bool | number) => true);
     }
 }
