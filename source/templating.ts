@@ -850,11 +850,11 @@ class ParseError extends ValidationIssue { }
 // API Generator
 //------------------------------------------------
 
-export function generateTemplatingAPI<GeneralExt = {}, TemplateExt = {}, PrimitiveExt = {}, VariadicExt = {}, CollectionExt = {}>(BaseClass: new (...args: any[]) => any = Object)
+export function generateTemplatingAPI<GeneralExt = {}, SchemaExt = {}, PrimitiveExt = {}, VariadicExt = {}, CollectionExt = {}>(BaseClass: new (...args: any[]) => any = Object)
 {
     const { ValueTemplate, StringTemplate, NumberTemplate, BooleanTemplate, VariadicTemplate, ObjectTemplate, RecordTemplate, ArrayTemplate, LiteralTemplate } = generateTemplatingClasses(BaseClass);
 
-    function schema<T extends TemplateObject>(inputSchema: T): SchemaAPI<InferSchemaType<T>> & TemplateExt & GeneralExt;
+    function schema<T extends TemplateObject>(inputSchema: T): SchemaAPI<InferSchemaType<T>> & SchemaExt & GeneralExt;
     function schema(inputSchema: any)
     {
         return ObjectTemplate.fromTemplateObject(inputSchema) as any;
