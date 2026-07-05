@@ -14,18 +14,23 @@ See this example:
 
 ```ts
 const template = schema({
-    name: string("anonymous"), // optional, due to default value "anonymous"
-    age: number().accepts((n) => n >= 0), // required, as no default provided
-    role: oneOf("admin", "user"),
-    variadicMember: valueOf(string, number, boolean).optional,
-    permissions: listOf({
-        domain: string(),
-        granted: arrayOf(oneOf("read", "write", "delete")),
-    }).withDefault({}),
+  name: string("anonymous"), // optional, due to default value "anonymous"
+  age: number().accepts((n) => n >= 0), // required, as no default provided
+  role: oneOf("admin", "user"),
+  variadicMember: valueOf(string, number, boolean).optional,
+  permissions: recordOf({
+    domain: string(),
+    granted: arrayOf(oneOf("read", "write", "delete")),
+  }).withDefault({}),
 });
 
+template.check(
+  { age: 35, role: "admin" }, // → true (type guard)
+);
+
 template.validate(
-    { age: 35, role: "admin" }, // → true
+  { age: 35, role: "admin" },
+  { mode: "thorough" }, // → ValidationResult with detailed issues
 );
 ```
 
@@ -36,9 +41,12 @@ template.validate(
   automatically.
 - **Fluent, declarative API** — chain `.required`, `.optional`, `.accepts(...)`,
   `.withDefault(...)` to express constraints in the order you read them.
+- **Fast by default** — validation short-circuits on the first failure for hot
+  paths, but you can switch into a mode that collects every issue with
+  path-traced `ValidationIssue`s using `{ mode: "thorough" }`.
 - **Zero dependencies** at runtime.
 - **Extensible** — bring your own base class / decorator chain via
-  `GenerateTemplatingAPI(BaseClass)`.
+  `generateTemplatingAPI(BaseClass)`.
 
 ## Quick start
 
@@ -55,8 +63,8 @@ npm install schematium
 import {
     schema,                         // the main validation/parsing API function
     boolean, number, string, object // primitives
-    array, arrayOf, list, listOf,   // collections
-    oneOf, valueOf                  // variadics
+    array, arrayOf, record, recordOf, // collections
+    oneOf, valueOf,                 // variadics
 } from "schematium";
 
 //You can define sub templates
@@ -66,31 +74,37 @@ const PostTemplate = {
 };
 
 const UserConfig = schema({
-    name: string("anonymous"),                   // optional (has default)
-    age: number().accepts((n) => n >= 0),        // required
-    role: oneOf("admin", "user"),                // required
-    tags: arrayOf(string).withDefault([]),       // optional (has default)
-    posts: listOf(PostTemplate).withDefault({}),  // optional (has default)
+    name: string("anonymous"),                    // optional (has default)
+    age: number().accepts((n) => n >= 0),         // required
+    role: oneOf("admin", "user"),                 // required
+    tags: arrayOf(string).withDefault([]),        // optional (has default)
+    posts: recordOf(PostTemplate).withDefault({}) // optional (has default)
 });
 
-UserConfig.validate({
+UserConfig.check({
     name: "Ada",
     age: 36,
     role: "admin",
     tags: ["founder"],
 }); // → true
 
-UserConfig.validate({ 
+UserConfig.check({
     age: 36,
 }); // → false (missing `role`)
 
-// Create a normalized object
+// Detailed result with every issue path-traced:
+UserConfig.validate(
+    { age: 36 },
+    { mode: "thorough" },
+); // → ValidationResult { success: false, issues: [...] }
+
+// Patch incoming incomplete objects with defaults:
 const userInput = {
     age: 40,
-    role: "user"
-}
+    role: "user",
+};
 
-const newUserWithDefaults = Object.assign(UserConfig.default, userInput);
+const newUserWithDefaults = Object.assign(UserConfig.getDefault(), userInput);
 ```
 
 ## Concepts
@@ -105,8 +119,9 @@ complementary interfaces**:
   `arrayOf(...).withDefault([])`, `accepts(...)`, etc.). It lives on the value
   returned by the primitive, variadic, and collection factory functions.
 - **Template API** — the operational surface you use while _consuming_ a
-  template (`.validate(value)`, `.parseString(text)`, `.getDefault()`). It is
-  only exposed once an entire object schema is wrapped by `schema(...)`.
+  template (`.check(value)`, `.validate(value, settings)`,
+  `.parseString(text, settings)`, `.getDefault()`). It is only exposed once an
+  entire object schema is wrapped by `schema(...)`.
 
 ### Type References & Inference
 
@@ -114,16 +129,16 @@ In the definition API you have two distinct factory types to define your schema:
 
 - **Value-array factories** — They take default values and infer the resulting
   type from them — `oneOf("admin", "user")`, `array([1, 2, 3])`,
-  `list({ alice: "admin" })`.
-- **Type-array factories** — They take other template factories as type descriptors and
-  have no value to fall back on — `valueOf(number, string)`,
-  `arrayOf(number, string)`, `listOf(number, string)`. Note that we only pass
+  `record({ alice: "admin" })`.
+- **Type-array factories** — They take other template factories as type
+  descriptors and have no value to fall back on — `valueOf(number, string)`,
+  `arrayOf(number, string)`, `recordOf(number, string)`. Note that we only pass
   the functions, _we do not invoke the factories_. These are always required; if
   you want a default you have to call `.withDefault(...)` explicitly.
 
 ### Understanding Defaults
 
-Schematium let's you manage defaults. This is handy in case you get incomplete
+Schematium lets you manage defaults. This is handy in case you get incomplete
 configuration/data and want to patch it with defaults. `template.getDefault()`
 produces an object containing all the paths that you have defined defaults for.
 
@@ -135,11 +150,11 @@ Schematium always returns a _fresh clone of the defaults_ when you call
 - **Defaults are cloned on read.** `getDefault()` runs the stored default
   through `structuredClone` before returning it by default. If you'd like to
   return a shared default value, specify `false` as a second parameter to
-  `withDefault()`
+  `withDefault()`.
 - **You can share default values by reference.** Despite the standard being a
-  structured clone, when you supply `.withDefault(/* default value*/, false)` in
-  the definition phase, Schematium will always inject a reference to this passed
-  default in the tree produced by `.getDefault()`, instead of a clone.
+  structured clone, when you supply `.withDefault(/* default value */, false)`
+  in the definition phase, Schematium will always inject a reference to this
+  passed default in the tree produced by `.getDefault()`, instead of a clone.
 - **Objects have implicit defaults.** when `object` or `schema` are used and no
   `.withDefault` defines a default value, `.getDefault()` assembles a fresh
   object from all member defaults on every call. An explicit
@@ -149,17 +164,80 @@ Schematium always returns a _fresh clone of the defaults_ when you call
 ### Understanding Optionality
 
 - **Types without defaults are required.** Schematium distinguishes between two
-  kinds of factory functions:
+  kinds of factory functions.
 - **Defaults imply optionality.** Passing a value to a primitive factory
-  (`string("anonymous")`) or to a collection factory (`array([])`, `list({})`)
+  (`string("anonymous")`) or to a collection factory (`array([])`, `record({})`)
   or calling `.withDefault(...)` marks a value optional _and_ adds a default.
-- **`.required` and `.optional`override schematium's inferred optionality.** The
-  modifiers apply last-wins.
+- **`.required` and `.optional` override schematium's inferred optionality.**
+  The modifiers apply last-wins.
 - **Objects with all optional members are inferred as optional.**
   `schema({...})` considers an object template optional only when _every_ member
   is optional. The moment one member is required, the whole object becomes
   required too — so forgetting `.required` on a single nested field quietly
   turns the entire parent into an optional one.
+
+## Validation
+
+Schematium exposes three runtime entry points on every `schema(...)` template:
+
+| Method                                  | Returns                           | Use when                               |
+| --------------------------------------- | --------------------------------- | -------------------------------------- |
+| `template.check(value, tolerances?)`    | `value is T` (boolean type guard) | You want a fast boolean decision       |
+| `template.validate(value, settings?)`   | `ValidationResult`                | You want every issue, with path traces, using `{mode: "thorough"}` |
+| `template.parseString(text, settings?)` | `ParseResult<T>`                  | Input arrives as a raw string          |
+
+### Validation modes
+
+`ValidationSettings` lets you switch between two modes:
+
+- `"fastNoIssueReport"` _(default)_ — short-circuits on the first failure.
+  `validate()` returns a result that only signals success/failure; no individual
+  issues are collected.
+- `"thorough"` — keeps validating after the first failure. `validate()` and
+  `parseString()` return a `RejectionResult` whose `issues` array contains one
+  `ValidationIssue` per failure, each with `path`, `message`, and a `kind`
+  derived from the issue class.
+
+### Validation tolerances
+
+`ValidationTolerances` are accepted by every method (and form the base of
+`ValidationSettings`):
+
+- `allowPartial` — accept objects that don't have all the keys declared in the
+  schema; only the types of the keys that _are_ present are checked. Defaults to
+  `false`.
+- `allowUnknowns` — accept objects that have additional keys not declared in the
+  schema. Defaults to `false`.
+
+### Custom validators with issue reporting
+
+`accepts(...)` and `acceptsEntries(...)` accept either a `(value) => boolean`
+predicate or a `(value, validator) => void` callback. The callback form gives
+you a `ValidationAPI` you can call
+`validator.rejectWith(ValidationIssue,
+message)` on to attach a custom issue to
+the result — which is only useful in `"thorough"` mode, since
+`"fastNoIssueReport"` discards issue detail.
+
+**Important:** Inside these callbacks, **do not throw exceptions** to
+communicate validation failures. Throwing will abort validation entirely and
+bubble out of `template.validate(...)` / `template.parseString(...)`, bypassing
+the result-based contract. Instead, signal failures by calling
+`validator.rejectWith(ValidationIssue, "message")` on the provided context —
+this keeps the failure inside the validation pipeline and lets the caller handle
+it as a normal `RejectionResult`:
+
+```ts
+const Port = number().accepts((value, validator) => {
+  if (!(value > 0 && value < 65536)) {
+    validator.rejectWith(ValidationIssue, "Port out of range");
+  }
+});
+```
+
+If you only need a yes/no decision and don't care about issue detail, prefer the
+boolean-returning form (`accepts((value) => true | false)`), which keeps your
+callback simple and works in both validation modes.
 
 ## Interfaces
 
@@ -169,15 +247,24 @@ Every value template supports these chainable modifiers:
 
 - `.required` — mark as required (overrides optionality from a default).
 - `.optional` — mark as optional (overrides a prior `.required`).
-- `.accepts((value) => boolean)` — install a custom validator.
-- `.withDefault(value)` — set a default value and implicitly make it optional.
-- `.acceptsEntries((value) => boolean)` — for collections, validate each entry.
+- `.accepts((value) => boolean)` — install a custom validator (boolean form).
+- `.accepts((value, validator) => void)` — install a validator that can emit
+  `ValidationIssue`s via the `ValidationAPI` callback.
+- `.withDefault(value, cloneOnAssign?)` — set a default value and implicitly
+  make it optional.
+- `.acceptsEntries((key, value) => boolean)` — for collections, validate each
+  entry (boolean form).
+- `.acceptsEntries((key, value, validator) => void)` — entry-level validator
+  with issue reporting.
 
 ### Template API
 
-- `template.validate(value)` — accepts a typed JS value, returns `boolean`.
-- `template.parseString(text)` — accepts a raw string, returns the parsed value
-  (or throws).
+- `template.check(value, tolerances?)` — type-guard; returns `value is T`.
+- `template.validate(value, settings?)` — returns `ValidationResult`
+  (`ValidationSuccessResult` or `RejectionResult`).
+- `template.parseString(text, settings?)` — returns `ParseResult<T>`
+  (`ParseSuccessResult<T>` or `RejectionResult`).
+- `template.getDefault()` — returns the default tree (cloned by default).
 
 `parseString` is particularly useful for CLI arguments and environment
 variables, which always arrive as strings. `valueOf(number, string)`
@@ -208,12 +295,16 @@ automatically tries `number` first (parse-priority 0), then `boolean` (priority
 
 ### Collections
 
-| Function              | Description                                                                  |
-| --------------------- | ---------------------------------------------------------------------------- |
-| `array(defaultArray)` | optional `T[]` whose element type is inferred from the example               |
-| `arrayOf(...types)`   | required array of the listed element types                                   |
-| `list(defaultObject)` | optional `Record<string, T>` whose element type is inferred from the example |
-| `listOf(...types)`    | required dictionary of the listed element types                              |
+| Function                        | Description                                                                  |
+| ------------------------------- | ---------------------------------------------------------------------------- |
+| `array(defaultArray, clone?)`   | optional `T[]` whose element type is inferred from the example               |
+| `arrayOf(...types)`             | required array of the listed element types                                   |
+| `record(defaultObject, clone?)` | optional `Record<string, T>` whose element type is inferred from the example |
+| `recordOf(...types)`            | required dictionary of the listed element types                              |
+
+> `record`/`recordOf` describe dictionaries (`Record<string, T>`). Keys are not
+> constrained by the schema — only the value type is. Use
+> `.acceptsEntries((key, value) => ...)` to add per-entry rules.
 
 ## Examples
 
@@ -221,18 +312,33 @@ automatically tries `number` first (parse-priority 0), then `boolean` (priority
 
 ```ts
 const Config = schema({
-    server: {
-        host: string("localhost"),
-        port: number(8080).required.accepts((p) => p > 0 && p < 65536),
-        tls: boolean(false),
-    },
-    features: arrayOf(string).withDefault([]),
+  server: {
+    host: string("localhost"),
+    port: number(8080).required.accepts((p) => p > 0 && p < 65536),
+    tls: boolean(false),
+  },
+  features: arrayOf(string).withDefault([]),
 });
 
-Config.validate({
-    server: { port: 9000, tls: true },
-    features: ["auth", "logging"],
+Config.check({
+  server: { port: 9000, tls: true },
+  features: ["auth", "logging"],
 }); // → true
+```
+
+### Collecting every validation issue
+
+```ts
+const result = Config.validate(
+  { server: { port: 9000, tls: "yes" }, features: "nope" },
+  { mode: "thorough", allowUnknowns: true },
+);
+
+if (!result.success) {
+  for (const issue of result.issues) {
+    console.log(issue.kind, issue.path, issue.message);
+  }
+}
 ```
 
 ### Parsing CLI args
@@ -243,47 +349,55 @@ import { oneOf, valueOf } from "schematium";
 const Mode = oneOf("dev", "prod");
 const Port = valueOf(number);
 
-Mode.parseString(process.argv[2]); // "dev" | "prod"
-Port.parseString(process.argv[3]); // number even though process.argv is string[]
+Mode.parseString(process.argv[2]); // { success: true, value: "dev" | "prod" }
+Port.parseString(process.argv[3]); // { success: true, value: number } even though process.argv is string[]
 ```
 
-### Lists with arbitrary keys
-
-`list`/`listOf` describe dictionaries (`Record<string, T>`). Keys are not
-constrained by the schema — only the value type is. Use
-`acceptsEntries((key, value) => ...)` to add per-entry rules.
+### Records with arbitrary keys
 
 ```ts
-const Profiles = listOf(string)
-    .withDefault({})
-    .acceptsEntries((key, value) => key.length > 0);
+const Profiles = recordOf(string)
+  .withDefault({})
+  .acceptsEntries((key, value) => key.length > 0);
 
-Profiles.validate({ alice: "admin", bob: "user" }); // → true
+Profiles.check({ alice: "admin", bob: "user" }); // → true
 ```
 
 ## Extending the API
 
 `schematium` ships a default API instance, but the entire class hierarchy is
-generated by a factory — `GenerateTemplatingAPI(BaseClass?)` — so you can
+generated by a factory — `generateTemplatingAPI(BaseClass?)` — so you can
 substitute your own base class and/or extend the fluent interfaces with your own
 methods. The extension entry point lives in `schematium-extensible`:
 
-```text
+```ts
+// Value imports
 import {
-    GenerateTemplatingAPI,           // Customized API surface generator
-    type TemplatingAPI,              // shape/type of the generated API
-    type ValueType,                  // extract the value type from a definition
+  generateTemplatingAPI, // Customized API surface generator
+  ValidationIssue, // issue class (for typed rejectWith)
+} from "schematium/extensible";
+
+// Type-only imports
+import type {
+  SchemaAPI, // shape/type of a fully-built schema(...)
+  TemplateAPI, // shape/type of a fluent definition chain
+  ValidationAPI, // shape of the validator callback API
+  ValidationResult, // success / rejection union
+  ValidationSettings, // per-call settings (tolerances + mode)
+  ValidationTolerances, // per-call tolerance settings
+  ValueType, // extract the value type from a definition
 } from "schematium/extensible";
 ```
 
-`TemplatingAPI` is parameterized over four slots:
+`TemplateAPI` is parameterized over five slots:
 
 ```ts
-TemplatingAPI<
-    TemplateExt, // mixed into the *Template API* of schema(...)
-    PrimitiveExt, // mixed into the *Definition API* of string/number/boolean/object(...)
-    VariadicExt, // mixed into the *Definition API* valueOf/oneOf(...)
-    CollectionExt // mixed into the *Definition API* list/listOf/array/arrayOf(...)
+TemplateAPI<
+  GeneralExt, // mixed into every template class
+  SchemaExt, // mixed into the *Schema API* of schema(...) (which returns SchemaAPI<...>)
+  PrimitiveExt, // mixed into the *Definition API* of string/number/boolean/object(...)
+  VariadicExt, // mixed into the *Definition API* of valueOf/oneOf(...)
+  CollectionExt // mixed into the *Definition API* of record/array/...
 >;
 ```
 
@@ -295,17 +409,17 @@ instance will `instanceof` your class and inherit its members.
 
 ```ts
 class MyBase {
-    metadata = "custom-base";
-    getBaseInfo() {
-        return "base-info";
-    }
+  metadata = "custom-base";
+  getBaseInfo() {
+    return "base-info";
+  }
 }
 
-//Here we supply MyBase type as the generic for TemplateExt, so MyBase members are available on the Templating API
-const api = GenerateTemplatingAPI<TemplatingAPI<MyBase>>(MyBase);
+//Here we supply MyBase type as the generic for SchemaExt, so MyBase members are available on the Schema API
+const api = generateTemplatingAPI<TemplateAPI<{}, MyBase>>(MyBase);
 
 const t = api.templating.schema({
-    sample: api.primitives.string("default").required,
+  sample: api.primitives.string("default").required,
 });
 
 t.metadata; // "custom-base"
@@ -317,44 +431,43 @@ generic argument:
 
 ```ts
 class TrackingBase {
-    calls: string[] = [];
-    constructor() {
-        this.calls.push("constructor");
-    }
+  calls: string[] = [];
+  constructor() {
+    this.calls.push("constructor");
+  }
 }
 
-//Note that this Extension will neither be visible in the Definition API nor the Templating API
-const api = GenerateTemplatingAPI(TrackingBase);
+//Note that this Extension will neither be visible in the Definition API nor the Schema API
+const api = generateTemplatingAPI(TrackingBase);
 ```
 
 ### Extending the fluent interfaces
 
 To add new chainable methods, declare a plain class whose members become part of
-the fluent API, then pass it as the appropriate `TemplatingAPI` slot. The
-methods automatically return `this`, so they compose with the built-in modifiers
+the fluent API, then pass it as the appropriate `TemplateAPI` slot. The methods
+automatically return `this`, so they compose with the built-in modifiers
 (`.required`, `.optional`, `.accepts(...)`, `.withDefault(...)`,
 `.acceptsEntries(...)`).
 
 ```ts
-import {
-    GenerateTemplatingAPI,
-    type TemplatingAPI,
-} from "schematium/extensible";
+import { generateTemplatingAPI, type TemplateAPI } from "schematium/extensible";
 
 class Taggable {
-    public tagValue?: string;
-    tag(tag: string): this {
-        this.tagValue = tag;
-        return this;
-    }
+  public tagValue?: string;
+  tag(tag: string): this {
+    this.tagValue = tag;
+    return this;
+  }
 }
 
-// Spread the extension into the primitive slot ( we supply {} to not modify the Template API):
-const api = GenerateTemplatingAPI<TemplatingAPI<{}, Taggable>>(Taggable);
+// Spread the extension into the primitive slot (we supply {} to not modify the Template API):
+const { number } = generateTemplatingAPI<TemplateAPI<{}, {}, Taggable>>(
+  Taggable,
+);
 
-const n = api.primitives.number(42).tag("my-number");
+const n = number(42).tag("my-number");
 n.tagValue; // "my-number"
-n.validate(7); // still works — the built-in API is preserved
+n.check(7); // still works — the built-in API is preserved
 ```
 
 ### Writing definition methods that see the value's type
@@ -366,28 +479,28 @@ any definition-API surface, including variadics, so the same extension works on
 
 ```ts
 import {
-    GenerateTemplatingAPI,
-    type TemplatingAPI,
-    type ValueType,
+  generateTemplatingAPI,
+  type TemplateAPI,
+  type ValueType,
 } from "schematium/extensible";
 
 class Extension {
-    typeDependentClosure(closure: (value: ValueType<this>) => boolean) {
-        return this;
-    }
+  typeDependentClosure(closure: (value: ValueType<this>) => boolean) {
+    return this;
+  }
 }
 
 // Apply the extension to every slot — primitives, variadics, and collections.
-const api = GenerateTemplatingAPI<
-    TemplatingAPI<{}, Extension, Extension, Extension>
+const { number, string, valueOf } = generateTemplatingAPI<
+  TemplateAPI<{}, Extension, Extension, Extension, Extension>
 >(Extension);
 
-api.primitives.number(42)
-    .typeDependentClosure((value: number) => true); // ok
-// .typeDependentClosure((value: boolean) => true);         // type error
+number(42)
+  .typeDependentClosure((value: number) => true); // ok
+// .typeDependentClosure((value: boolean) => true);  // type error
 
-api.variadics.valueOf(api.primitives.number, api.primitives.string)
-    .typeDependentClosure((value: string | number) => true); // ok
+valueOf(number, string)
+  .typeDependentClosure((value: string | number) => true); // ok
 ```
 
 This is the recommended way to build reusable helpers (custom validators,
