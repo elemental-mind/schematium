@@ -431,17 +431,62 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
     class VariadicTemplate<T> extends ValueTemplate<T>
     {
         public permittedTypes: ValueTemplate<any>[] = [];
+        public discriminationMaps?: { uniqueKeys: Map<string, ValueTemplate<any>>, typeDiscernableKeys: Map<string, ValueTemplate<any>[]>; };
 
         constructor(...permittedTypes: ValueTemplate<any>[])
         {
             super();
             this.permittedTypes = permittedTypes;
             this.sortForParsingPriority();
+            this.buildDiscernmentMap();
         }
 
         private sortForParsingPriority()
         {
             this.permittedTypes.sort((a, b) => a.parsingPriority - b.parsingPriority);
+        }
+
+        private buildDiscernmentMap()
+        {
+            const objectShapes = this.permittedTypes.filter(type => type instanceof ObjectTemplate);
+
+            if (objectShapes.length < 2) return;
+
+            class KeyProfile
+            {
+                name: string;
+                occurences = new Array<ValueTemplate<any>>();
+                valueTypes = new Set<Function>;
+
+                constructor(name: string)
+                {
+                    this.name = name;
+                }
+
+                addOccurence(template: ValueTemplate<any>)
+                {
+                    this.occurences.push(template);
+                    this.valueTypes.add(template.constructor);
+                    return this;
+                }
+
+                addToDiscriminationMap(map: { uniqueKeys: Map<string, ValueTemplate<any>>, typeDiscernableKeys: Map<string, ValueTemplate<any>[]>; })
+                {
+                    if (this.occurences.length === 1)
+                        map.uniqueKeys.set(this.name, this.occurences[0]);
+                    else if (this.occurences.length >= 2 && this.occurences.length === this.valueTypes.size)
+                        map.typeDiscernableKeys.set(this.name, this.occurences);
+                }
+            }
+
+            const keyMap = new Map<string, KeyProfile>();
+            for (const shape of objectShapes)
+                for (const [key, template] of shape.entries)
+                    keyMap.get(key)?.addOccurence(template) ?? keyMap.set(key, new KeyProfile(key).addOccurence(template));
+
+            this.discriminationMaps = { typeDiscernableKeys: new Map(), uniqueKeys: new Map() };
+            for (const register of keyMap.values())
+                register.addToDiscriminationMap(this.discriminationMaps);
         }
 
         parseRaw<T>(value: string, validator: Validator): T | undefined
