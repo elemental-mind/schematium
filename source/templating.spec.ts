@@ -16,6 +16,7 @@ export interface InjectionSchemaAPI
     validate(value: unknown, settings?: ValidationSettings): ValidationResult;
     parseString(value: string, settings?: ValidationSettings): ParseResult<ValueType<this>>;
     getDefault(): Partial<ValueType<this>> | undefined;
+    schemaAlignedAssign(base: ValueType<this>, ...overrides: any[]): ValueType<this>;
 }
 
 const { schema, string, number, boolean, object, valueOf, oneOf, record, recordOf, array, arrayOf } = generateTemplatingAPI<InjectionSchemaAPI>();
@@ -1669,5 +1670,359 @@ export class CollectionThoroughValidationTests
         assert.strictEqual(result.success, false);
         assert.ok(result.issues.length > 0, "expected at least one type mismatch issue for non-array");
         assert.strictEqual(result.issues[0].kind, "TypeMismatch");
+    }
+}
+
+// ============================================================
+// Schema-aligned assign
+// ============================================================
+
+export class SchemaAlignedAssignTests
+{
+    // --------------------------------------------------
+    // Simple object merging
+    // --------------------------------------------------
+
+    mergesPartialOverrideIntoBaseObject()
+    {
+        const t = schema({
+            host: string(),
+            port: number(),
+        });
+
+        const result = t.schemaAlignedAssign(
+            { host: "localhost", port: 8080 },
+            { port: 3000 }
+        );
+
+        assert.deepStrictEqual(result, { host: "localhost", port: 3000 });
+    }
+
+    overrideReplacesAllKeysWhenAllProvided()
+    {
+        const t = schema({
+            host: string(),
+            port: number(),
+        });
+
+        const result = t.schemaAlignedAssign(
+            { host: "localhost", port: 8080 },
+            { host: "example.com", port: 3000 }
+        );
+
+        assert.deepStrictEqual(result, { host: "example.com", port: 3000 });
+    }
+
+    dropsOverrideKeysNotDefinedInSchema()
+    {
+        const t = schema({
+            host: string(),
+            port: number(),
+        });
+
+        const result = t.schemaAlignedAssign(
+            { host: "localhost", port: 8080 },
+            { host: "example.com", unknown: "should be dropped" } as any
+        );
+
+        assert.deepStrictEqual(result, { host: "example.com", port: 8080 });
+    }
+
+    emptyOverrideReturnsBaseUnchanged()
+    {
+        const t = schema({
+            host: string(),
+            port: number(),
+        });
+
+        const result = t.schemaAlignedAssign(
+            { host: "localhost", port: 8080 },
+            {}
+        );
+
+        assert.deepStrictEqual(result, { host: "localhost", port: 8080 });
+    }
+
+    // --------------------------------------------------
+    // Variadic with two object shapes — variant switching
+    // --------------------------------------------------
+
+    variadicReplacesEntirelyWhenOverrideTargetsDifferentShape()
+    {
+        const t = valueOf(
+            { type: string(), value: number() },
+            { type: string(), label: string(), enabled: boolean() }
+        );
+
+        const result = t.schemaAlignedAssign(
+            { type: "x", value: 123 },
+            { type: "y", label: "something", enabled: false }
+        );
+
+        // Override targets a different shape → full replace, no key leakage from base
+        assert.deepStrictEqual(result, { type: "y", label: "something", enabled: false });
+    }
+
+    variadicMergesWhenOverrideTargetsSameShape()
+    {
+        const t = valueOf(
+            { type: string(), value: number() },
+            { type: string(), label: string(), enabled: boolean() }
+        );
+
+        const result = t.schemaAlignedAssign(
+            { type: "x", value: 123 },
+            { type: "x", value: 456 }
+        );
+
+        // Same shape → merge
+        assert.deepStrictEqual(result, { type: "x", value: 456 });
+    }
+
+    variadicPartialOverrideSameShapePreservesOtherKeys()
+    {
+        const t = valueOf(
+            { type: string(), value: number(), extra: string("default") },
+            { type: string(), label: string(), enabled: boolean() }
+        );
+
+        const result = t.schemaAlignedAssign(
+            { type: "x", value: 123, extra: "keep-me" },
+            { value: 456 }
+        );
+
+        // Same shape, partial override → merge preserving non-overridden keys from base
+        assert.deepStrictEqual(result, { type: "x", value: 456, extra: "keep-me" });
+    }
+
+    variadicReplaceDropsStaleKeysFromPreviousShape()
+    {
+        const t = valueOf(
+            { type: string(), value: number() },
+            { type: string(), label: string(), enabled: boolean() }
+        );
+
+        const result = t.schemaAlignedAssign(
+            { type: "x", value: 123 },
+            { type: "y", label: "new", enabled: true }
+        );
+
+        // Full replace to Shape B — `value` from Shape A must not leak through
+        assert.deepStrictEqual(result, { type: "y", label: "new", enabled: true });
+    }
+
+    variadicOverrideWithExtraneousKeysRelativeToTargetShapeDropsThem()
+    {
+        const t = valueOf(
+            { type: string(), value: number() },
+            { type: string(), label: string(), enabled: boolean() }
+        );
+
+        // Override targets Shape B but also carries `value` (a Shape A key)
+        const result = t.schemaAlignedAssign(
+            { type: "x", value: 123 },
+            { type: "y", label: "new", enabled: true, value: 999 }
+        );
+
+        // `value` should be stripped — it's not in Shape B's schema
+        assert.deepStrictEqual(result, { type: "y", label: "new", enabled: true });
+    }
+
+    // --------------------------------------------------
+    // Nested object merging
+    // --------------------------------------------------
+
+    nestedObjectMergesRecursively()
+    {
+        const t = schema({
+            name: string(),
+            settings: {
+                theme: string(),
+                volume: number(),
+            },
+        });
+
+        const result = t.schemaAlignedAssign(
+            { name: "app", settings: { theme: "dark", volume: 80 } },
+            { settings: { volume: 50 } }
+        );
+
+        assert.deepStrictEqual(result, { name: "app", settings: { theme: "dark", volume: 50 } });
+    }
+
+    nestedObjectFullOverrideReplacesSubtree()
+    {
+        const t = schema({
+            name: string(),
+            settings: {
+                theme: string(),
+                volume: number(),
+            },
+        });
+
+        const result = t.schemaAlignedAssign(
+            { name: "app", settings: { theme: "dark", volume: 80 } },
+            { settings: { theme: "light", volume: 20 } }
+        );
+
+        assert.deepStrictEqual(result, { name: "app", settings: { theme: "light", volume: 20 } });
+    }
+
+    nestedObjectDropsUnknownKeysInSubtree()
+    {
+        const t = schema({
+            name: string(),
+            settings: {
+                theme: string(),
+                volume: number(),
+            },
+        });
+
+        const result = t.schemaAlignedAssign(
+            { name: "app", settings: { theme: "dark", volume: 80 } },
+            { settings: { theme: "light", unknown: "drop-me" }}
+        );
+
+        assert.deepStrictEqual(result, { name: "app", settings: { theme: "light", volume: 80 } });
+    }
+
+    // --------------------------------------------------
+    // Primitive values (non-object)
+    // --------------------------------------------------
+
+    primitiveStringOverrideReplacesValue()
+    {
+        const t = string();
+        const result = t.schemaAlignedAssign("hello", "world");
+
+        assert.strictEqual(result, "world");
+    }
+
+    primitiveNumberOverrideReplacesValue()
+    {
+        const t = number();
+        const result = t.schemaAlignedAssign(42, 100);
+
+        assert.strictEqual(result, 100);
+    }
+
+    variadicPrimitiveOverrideReplacesValue()
+    {
+        const t = valueOf(number, string);
+        const result = t.schemaAlignedAssign(42, "hello");
+
+        assert.strictEqual(result, "hello");
+    }
+
+    // --------------------------------------------------
+    // Collections (arrays and records) — replace entirely
+    // --------------------------------------------------
+
+    arrayOverrideReplacesEntirely()
+    {
+        const t = arrayOf(number);
+        const result = t.schemaAlignedAssign([1, 2, 3], [4, 5]);
+
+        assert.deepStrictEqual(result, [4, 5]);
+    }
+
+    recordOverrideReplacesEntirely()
+    {
+        const t = recordOf(string);
+        const result = t.schemaAlignedAssign({ a: "x" }, { b: "y" });
+
+        assert.deepStrictEqual(result, { b: "y" });
+    }
+
+    // --------------------------------------------------
+    // Multiple overrides — applied left to right
+    // --------------------------------------------------
+
+    multipleOverridesAppliedLeftToRight()
+    {
+        const t = schema({
+            host: string(),
+            port: number(),
+            debug: boolean(),
+        });
+
+        const result = t.schemaAlignedAssign(
+            { host: "localhost", port: 8080, debug: false },
+            { port: 3000 },
+            { debug: true }
+        );
+
+        assert.deepStrictEqual(result, { host: "localhost", port: 3000, debug: true });
+    }
+
+    multipleOverridesLaterOneWinsOnConflict()
+    {
+        const t = schema({
+            host: string(),
+            port: number(),
+        });
+
+        const result = t.schemaAlignedAssign(
+            { host: "localhost", port: 8080 },
+            { port: 3000 },
+            { port: 9090 }
+        );
+
+        assert.deepStrictEqual(result, { host: "localhost", port: 9090 });
+    }
+
+    // --------------------------------------------------
+    // Edge cases — undefined / null overrides
+    // --------------------------------------------------
+
+    undefinedOverrideIsSkipped()
+    {
+        const t = schema({
+            host: string(),
+            port: number(),
+        });
+
+        const result = t.schemaAlignedAssign(
+            { host: "localhost", port: 8080 },
+            undefined as any
+        );
+
+        assert.deepStrictEqual(result, { host: "localhost", port: 8080 });
+    }
+
+    nullOverrideIsSkipped()
+    {
+        const t = schema({
+            host: string(),
+            port: number(),
+        });
+
+        const result = t.schemaAlignedAssign(
+            { host: "localhost", port: 8080 },
+            null as any
+        );
+
+        assert.deepStrictEqual(result, { host: "localhost", port: 8080 });
+    }
+
+    // --------------------------------------------------
+    // Defaults — base populated from schema defaults when not provided
+    // --------------------------------------------------
+
+    usesSchemaDefaultsWhenBaseHasMissingOptionalKeys()
+    {
+        const t = schema({
+            host: string(),
+            port: number(8080),
+            debug: boolean(false),
+        });
+
+        // Base only provides `host`; port and debug should use defaults as base values
+        const result = t.schemaAlignedAssign(
+            { host: "localhost" } as any,
+            { debug: true }
+        );
+
+        assert.deepStrictEqual(result, { host: "localhost", port: 8080, debug: true });
     }
 }
