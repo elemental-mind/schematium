@@ -428,17 +428,24 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
         }
     }
 
+    type KeyProfile = { templates: ValueTemplate<any>[], templateTypes: Set<Function>; };
+    type DiscriminationRegistry = { uniqueKeys: Map<string, ValueTemplate<any>>, typeDiscernableKeys: Map<string, ValueTemplate<any>[]>; };
+
     class VariadicTemplate<T> extends ValueTemplate<T>
     {
         public permittedTypes: ValueTemplate<any>[] = [];
-        public discriminationMaps?: { uniqueKeys: Map<string, ValueTemplate<any>>, typeDiscernableKeys: Map<string, ValueTemplate<any>[]>; };
+        public discriminationRegistry?: DiscriminationRegistry;
 
         constructor(...permittedTypes: ValueTemplate<any>[])
         {
             super();
             this.permittedTypes = permittedTypes;
             this.sortForParsingPriority();
-            this.buildDiscernmentMap();
+
+            const objectShapes = this.permittedTypes.filter(type => type instanceof ObjectTemplate);
+            //If we have multiple object shapes it makes sense to build a discriminator map for quicker validation
+            if (objectShapes.length >= 2)
+                this.buildDiscriminationRegistry(objectShapes);
         }
 
         private sortForParsingPriority()
@@ -446,47 +453,33 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             this.permittedTypes.sort((a, b) => a.parsingPriority - b.parsingPriority);
         }
 
-        private buildDiscernmentMap()
+        private buildDiscriminationRegistry(objectShapes: ObjectTemplate<any>[])
         {
-            const objectShapes = this.permittedTypes.filter(type => type instanceof ObjectTemplate);
-
-            if (objectShapes.length < 2) return;
-
-            class KeyProfile
+            const keyMap = new Map<string, KeyProfile>();
+            for (const shape of objectShapes)
             {
-                name: string;
-                occurences = new Array<ValueTemplate<any>>();
-                valueTypes = new Set<Function>;
-
-                constructor(name: string)
+                for (const [key, template] of shape.entries)
                 {
-                    this.name = name;
-                }
-
-                addOccurence(template: ValueTemplate<any>)
-                {
-                    this.occurences.push(template);
-                    this.valueTypes.add(template.constructor);
-                    return this;
-                }
-
-                addToDiscriminationMap(map: { uniqueKeys: Map<string, ValueTemplate<any>>, typeDiscernableKeys: Map<string, ValueTemplate<any>[]>; })
-                {
-                    if (this.occurences.length === 1)
-                        map.uniqueKeys.set(this.name, this.occurences[0]);
-                    else if (this.occurences.length >= 2 && this.occurences.length === this.valueTypes.size)
-                        map.typeDiscernableKeys.set(this.name, this.occurences);
+                    const profile: KeyProfile = keyMap.get(key) ?? { templates: [], templateTypes: new Set() };
+                    profile.templates.push(template);
+                    profile.templateTypes.add(template instanceof LiteralTemplate ? template.permittedValue : template.constructor);
+                    keyMap.set(key, profile);
                 }
             }
 
-            const keyMap = new Map<string, KeyProfile>();
-            for (const shape of objectShapes)
-                for (const [key, template] of shape.entries)
-                    keyMap.get(key)?.addOccurence(template) ?? keyMap.set(key, new KeyProfile(key).addOccurence(template));
+            const potentialRegistry: DiscriminationRegistry = { uniqueKeys: new Map(), typeDiscernableKeys: new Map() };
+            for (const [key, profile] of keyMap.entries())
+            {
+                //We register keys not shared between variants
+                if (profile.templates.length === 1)
+                    potentialRegistry.uniqueKeys.set(key, profile.templates[0]);
+                //We register keys that have differing types and are discernable by types
+                else if (profile.templates.length >= 2 && profile.templates.length === profile.templateTypes.size)
+                    potentialRegistry.typeDiscernableKeys.set(key, profile.templates);
+            }
 
-            this.discriminationMaps = { typeDiscernableKeys: new Map(), uniqueKeys: new Map() };
-            for (const register of keyMap.values())
-                register.addToDiscriminationMap(this.discriminationMaps);
+            if (potentialRegistry.typeDiscernableKeys.size || potentialRegistry.uniqueKeys.size)
+                this.discriminationRegistry = potentialRegistry;
         }
 
         parseRaw<T>(value: string, validator: Validator): T | undefined
