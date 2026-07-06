@@ -1880,10 +1880,73 @@ export class SchemaAlignedAssignTests
 
         const result = t.schemaAlignedAssign(
             { name: "app", settings: { theme: "dark", volume: 80 } },
-            { settings: { theme: "light", unknown: "drop-me" }}
+            { settings: { theme: "light", unknown: "drop-me" } }
         );
 
         assert.deepStrictEqual(result, { name: "app", settings: { theme: "light", volume: 80 } });
+    }
+
+    // --------------------------------------------------
+    // Nested variadic objects
+    // --------------------------------------------------
+
+    nestedVariadicFieldSwitchesShapeWithinParentObject()
+    {
+        const t = schema({
+            name: string(),
+            payload: valueOf(
+                { kind: string(), value: number() },
+                { kind: string(), label: string(), enabled: boolean() }
+            ),
+        });
+
+        const result = t.schemaAlignedAssign(
+            { name: "test", payload: { kind: "a", value: 10 } },
+            { payload: { kind: "b", label: "override", enabled: true } }
+        );
+
+        // payload switches variant → full replace of the nested variadic, parent key preserved
+        assert.deepStrictEqual(result, { name: "test", payload: { kind: "b", label: "override", enabled: true } });
+    }
+
+    nestedVariadicFieldMergesWithinSameShape()
+    {
+        const t = schema({
+            name: string(),
+            payload: valueOf(
+                { kind: string(), value: number(), extra: string("default") },
+                { kind: string(), label: string(), enabled: boolean() }
+            ),
+        });
+
+        const result = t.schemaAlignedAssign(
+            { name: "test", payload: { kind: "a", value: 10, extra: "keep" } },
+            { payload: { value: 99 } }
+        );
+
+        // payload stays in same variant → merge preserving base keys
+        assert.deepStrictEqual(result, { name: "test", payload: { kind: "a", value: 99, extra: "keep" } });
+    }
+
+    deeplyNestedVariadicSwitchesAtLeafLevel()
+    {
+        const t = schema({
+            app: string(),
+            config: {
+                target: valueOf(
+                    { mode: string(), retries: number() },
+                    { mode: string(), fallback: string(), timeout: number() }
+                ),
+            },
+        });
+
+        const result = t.schemaAlignedAssign(
+            { app: "svc", config: { target: { mode: "direct", retries: 3 } } },
+            { config: { target: { mode: "proxy", fallback: "backup", timeout: 5000 } } }
+        );
+
+        // Deep nested variadic switches → leaf replaced entirely, parent keys preserved
+        assert.deepStrictEqual(result, { app: "svc", config: { target: { mode: "proxy", fallback: "backup", timeout: 5000 } } });
     }
 
     // --------------------------------------------------
