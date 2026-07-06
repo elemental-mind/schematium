@@ -74,9 +74,10 @@ export interface ValidationSettings extends ValidationTolerances
 export type ValueType<Template> =
     Template extends SchemaBaseAPI<infer T> ? T :
     Template extends TemplateObject ? InferSchemaType<Template> :
+    Template extends LiteralType ? Template :
     never;
 
-export type TemplateObjectEntry = TemplateObject | SchemaBaseAPI<any>;
+export type TemplateObjectEntry = TemplateObject | LiteralType | SchemaBaseAPI<any>;
 
 export type InferSchemaType<T extends TemplateObject> = { [K in RequiredKeys<T>]: Exclude<ValueType<T[K]>, undefined>; } & { [K in OptionalKeys<T>]?: ValueType<T[K]>; };
 
@@ -105,7 +106,7 @@ type StrictlyRequiredEntry = { [forceRequired]: true; };
 type OptionalEntry = { [required]: false; };
 type StrictlyOptionalEntry = { [forceRequired]: false; };
 
-type RequiredKeys<T extends TemplateObject> = { [K in keyof T]-?: T[K] extends RequiredEntry ? K : never }[keyof T];
+type RequiredKeys<T extends TemplateObject> = { [K in keyof T]-?: T[K] extends RequiredEntry ? K : T[K] extends LiteralType ? K : never }[keyof T];
 type OptionalKeys<T extends TemplateObject> = Exclude<keyof T, RequiredKeys<T>>;
 
 type ForceRequired<T, ForcedState extends boolean> =
