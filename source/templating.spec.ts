@@ -219,6 +219,170 @@ export class VariadicDefinitionTests
 }
 
 // ============================================================
+// Variadic object shape discernment
+// ============================================================
+
+export class VariadicObjectDiscernmentTests
+{
+
+    uniquelyKeyedObjectsAreDiscriminated()
+    {
+        const t = valueOf(
+            { username: string(), age: number() },
+            { username: string(), permissions: string() },
+            { sku: string(), price: number() }
+        );
+
+        assert.strictEqual(t.check({ username: "alice", age: 30 }), true, "expected User shape to pass");
+        assert.strictEqual(t.check({ username: "bob", permissions: "root" }), true, "expected Admin shape to pass");
+        assert.strictEqual(t.check({ sku: "ABC", price: 9.99 }), true, "expected Product shape to pass");
+    }
+
+    uniquelyKeyedObjectsParseFromJson()
+    {
+        const t = valueOf(
+            { username: string(), age: number() },
+            { username: string(), permissions: string() }
+        );
+
+        assertParseSuccess(t.parseString('{"username":"alice","age":30}'), { username: "alice", age: 30 });
+        assertParseSuccess(t.parseString('{"username":"bob","permissions":"root"}'), { username: "bob", permissions: "root" });
+    }
+
+    sharedKeyObjectsAreDiscriminated()
+    {
+        const t = valueOf(
+            { radius: number() },
+            { width: number(), height: number() },
+            { width: number() }
+        );
+
+        assert.strictEqual(t.check({ radius: 5 }), true, "expected Circle to pass");
+        assert.strictEqual(t.check({ width: 10, height: 20 }), true, "expected Rectangle to pass");
+        assert.strictEqual(t.check({ width: 10 }), true, "expected Square to pass");
+    }
+
+    sharedKeyObjectsRejectAmbiguousInvalidShapes()
+    {
+        const t = valueOf(
+            { radius: number() },
+            { width: number(), height: number() },
+            { width: number() }
+        );
+
+        // Wrong type
+        assert.strictEqual(t.check({ radius: "big" }), false, "expected wrong type on Circle to fail");
+        assert.strictEqual(t.check({ width: "wide", height: 20 }), false, "expected wrong type on Rectangle to fail");
+    }
+
+    sharedKeyObjectsParseFromJson()
+    {
+        const t = valueOf(
+            { radius: number() },
+            { width: number(), height: number() },
+            { width: number() }
+        );
+
+        assertParseSuccess(t.parseString('{"radius":5}'), { radius: 5 });
+        assertParseSuccess(t.parseString('{"width":10,"height":20}'), { width: 10, height: 20 });
+        assertParseSuccess(t.parseString('{"width":10}'), { width: 10 });
+    }
+
+    typeDifferenceDiscriminatesObjects()
+    {
+        const t = valueOf(
+            { id: number() },
+            { id: string() }
+        );
+
+        assert.strictEqual(t.check({ id: 42 }), true, "expected number id to pass (A)");
+        assert.strictEqual(t.check({ id: "abc" }), true, "expected string id to pass (B)");
+    }
+
+    typeDifferenceRejectsIncompatibleValue()
+    {
+        const t = valueOf(
+            { id: number() },
+            { id: string() }
+        );
+
+        assert.strictEqual(t.check({ id: true }), false, "expected boolean id to fail");
+        assert.strictEqual(t.check({ id: null }), false, "expected null id to fail");
+    }
+
+    typeDifferenceParsesFromJson()
+    {
+        const t = valueOf(
+            { id: number() },
+            { id: string() }
+        );
+
+        assertParseSuccess(t.parseString('{"id":42}'), { id: 42 });
+        assertParseSuccess(t.parseString('{"id":"abc"}'), { id: "abc" });
+    }
+
+    literalFieldDiscriminatesObjects()
+    {
+        const t = valueOf(
+            { type: "vehicle", wheels: number() },
+            { type: "animal", legs: number() }
+        );
+
+        assert.strictEqual(t.check({ type: "vehicle", wheels: 4 }), true, "expected Vehicle to pass");
+        assert.strictEqual(t.check({ type: "animal", legs: 4 }), true, "expected Animal to pass");
+    }
+
+    literalFieldRejectsWrongDiscriminator()
+    {
+        const t = valueOf(
+            { type: "vehicle", wheels: number() },
+            { type: "animal", legs: number() }
+        );
+
+        // "plant" matches neither literal
+        assert.strictEqual(t.check({ type: "plant", leaves: 3 }), false, "expected unknown discriminator to fail");
+    }
+
+    literalFieldRejectsWrongBodyForDiscriminator()
+    {
+        const t = valueOf(
+            { type: "vehicle", wheels: number() },
+            { type: "animal", legs: number() }
+        );
+
+        // type says vehicle, but missing wheels
+        assert.strictEqual(t.check({ type: "vehicle" }), false, "expected missing required field for Vehicle to fail");
+        // type says animal, but legs has wrong type
+        assert.strictEqual(t.check({ type: "animal", legs: "four" }), false, "expected wrong type on Animal legs to fail");
+    }
+
+    literalFieldParsesFromJson()
+    {
+        const t = valueOf(
+            { type: "vehicle", wheels: number() },
+            { type: "animal", legs: number() }
+        );
+
+        assertParseSuccess(t.parseString('{"type":"vehicle","wheels":4}'), { type: "vehicle", wheels: 4 });
+        assertParseSuccess(t.parseString('{"type":"animal","legs":4}'), { type: "animal", legs: 4 });
+    }
+
+    objectAndPrimitiveMixedInValueOf()
+    {
+        const t = valueOf(
+            { username: string(), age: number() },
+            number,
+            string
+        );
+
+        assert.strictEqual(t.check({ username: "alice", age: 30 }), true, "expected object shape to pass");
+        assert.strictEqual(t.check(42), true, "expected number to pass");
+        assert.strictEqual(t.check("hello"), true, "expected string to pass");
+        assert.strictEqual(t.check(true), false, "expected boolean to fail");
+    }
+}
+
+// ============================================================
 // Object template
 // ============================================================
 

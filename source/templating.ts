@@ -74,9 +74,10 @@ export interface ValidationSettings extends ValidationTolerances
 export type ValueType<Template> =
     Template extends SchemaBaseAPI<infer T> ? T :
     Template extends TemplateObject ? InferSchemaType<Template> :
+    Template extends LiteralType ? Template :
     never;
 
-export type TemplateObjectEntry = TemplateObject | SchemaBaseAPI<any>;
+export type TemplateObjectEntry = TemplateObject | LiteralType | SchemaBaseAPI<any>;
 
 export type InferSchemaType<T extends TemplateObject> = { [K in RequiredKeys<T>]: Exclude<ValueType<T[K]>, undefined>; } & { [K in OptionalKeys<T>]?: ValueType<T[K]>; };
 
@@ -105,7 +106,7 @@ type StrictlyRequiredEntry = { [forceRequired]: true; };
 type OptionalEntry = { [required]: false; };
 type StrictlyOptionalEntry = { [forceRequired]: false; };
 
-type RequiredKeys<T extends TemplateObject> = { [K in keyof T]-?: T[K] extends RequiredEntry ? K : never }[keyof T];
+type RequiredKeys<T extends TemplateObject> = { [K in keyof T]-?: T[K] extends RequiredEntry ? K : T[K] extends LiteralType ? K : never }[keyof T];
 type OptionalKeys<T extends TemplateObject> = Exclude<keyof T, RequiredKeys<T>>;
 
 type ForceRequired<T, ForcedState extends boolean> =
@@ -427,24 +428,42 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
         }
     }
 
+    type ShapeEntryTemplatePair = { shape: ObjectTemplate<any>, keyTemplate: ValueTemplate<any>; };
+    type KeyProfile = { templates: ShapeEntryTemplatePair[], templateTypes: Set<Function>; };
+    type ObjectFingerprints = { uniqueKeys: Map<string, ShapeEntryTemplatePair>, typeDiscernableKeys: Map<string, ShapeEntryTemplatePair[]>; };
+
     class VariadicTemplate<T> extends ValueTemplate<T>
     {
         public permittedTypes: ValueTemplate<any>[] = [];
+        public objectFingerprints?: ObjectFingerprints;
 
         constructor(...permittedTypes: ValueTemplate<any>[])
         {
             super();
             this.permittedTypes = permittedTypes;
             this.sortForParsingPriority();
-        }
 
-        private sortForParsingPriority()
-        {
-            this.permittedTypes.sort((a, b) => a.parsingPriority - b.parsingPriority);
+            const objectShapes = this.permittedTypes.filter(type => type instanceof ObjectTemplate);
+
+            //If we have multiple object shapes it makes sense to build a fingerprint map for quicker validation
+            //It only makes sense to do object fingerprinting if we don't have a record template also in the set
+            if (objectShapes.length >= 2 && !this.permittedTypes.some(template => template instanceof RecordTemplate))
+                this.buildObjectFingerprints(objectShapes);
         }
 
         parseRaw<T>(value: string, validator: Validator): T | undefined
         {
+            fastPath:
+            if (this.objectFingerprints)
+            {
+                let parsedValue: any;
+                try { parsedValue = JSON.parse(value); } catch { break fastPath; }
+
+                const matchedShape = this.identifyObjectTemplateByFingerprint(parsedValue);
+                if (matchedShape)
+                    return validator.issueCount === matchedShape.validateWithValidator(parsedValue, validator).issueCount ? parsedValue as T : undefined;
+            }
+
             const fastSubValidator = Validator.getFastSubValidator(validator);
 
             let result: T | undefined;
@@ -468,6 +487,15 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
         validateType(value: unknown, validator: Validator)
         {
+            if (this.objectFingerprints)
+            {
+                //If we have a return value we have a surefire way to discern this object from other object templates
+                //If we can not fingerprint the object we fall back to brute force validation
+                const objectTemplate = this.identifyObjectTemplateByFingerprint(value as Record<string, any>);
+                if (objectTemplate)
+                    return objectTemplate.validateWithValidator(value, validator);
+            }
+
             const fastSubValidator = Validator.getFastSubValidator(validator);
 
             let matched = false;
@@ -481,6 +509,57 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             fastSubValidator.release();
 
             return matched ? validator : validator.rejectWith(UnknownValue, "Value not in list of allowed types");
+        }
+
+        private sortForParsingPriority()
+        {
+            this.permittedTypes.sort((a, b) => a.parsingPriority - b.parsingPriority);
+        }
+
+        private buildObjectFingerprints(objectShapes: ObjectTemplate<any>[])
+        {
+            const keyMap = new Map<string, KeyProfile>();
+            for (const shape of objectShapes)
+            {
+                for (const [key, keyTemplate] of shape.entries)
+                {
+                    const profile: KeyProfile = keyMap.get(key) ?? { templates: [], templateTypes: new Set() };
+                    profile.templates.push({ shape, keyTemplate: keyTemplate });
+                    profile.templateTypes.add(keyTemplate instanceof LiteralTemplate ? keyTemplate.permittedValue : keyTemplate.constructor);
+                    keyMap.set(key, profile);
+                }
+            }
+
+            const uniqueKeys = new Map();
+            const typeDiscernableKeys = new Map();
+            for (const [key, profile] of keyMap.entries())
+            {
+                //We register keys not shared between variants
+                if (profile.templates.length === 1)
+                    uniqueKeys.set(key, profile.templates[0]);
+                //We register keys that have differing types and are discernable by types
+                else if (profile.templates.length >= 2 && profile.templates.length === profile.templateTypes.size)
+                    typeDiscernableKeys.set(key, profile.templates);
+            }
+
+            if (typeDiscernableKeys.size || uniqueKeys.size)
+                this.objectFingerprints = { uniqueKeys, typeDiscernableKeys };
+        }
+
+        private identifyObjectTemplateByFingerprint(value: Record<string, any>): ObjectTemplate<any> | undefined
+        {
+            if (typeof value !== "object" || value === null || Array.isArray(value))
+                return undefined;
+
+            for (const [key, { shape }] of this.objectFingerprints!.uniqueKeys)
+                if (key in value) return shape;
+
+            for (const [key, entryTypes] of this.objectFingerprints!.typeDiscernableKeys)
+                if (key in value)
+                    for (const { shape, keyTemplate } of entryTypes)
+                        if (keyTemplate.check(value[key])) return shape;
+
+            return undefined;
         }
     }
 
@@ -511,7 +590,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
             for (const [key, value] of Object.entries(templateObject))
             {
-                const subTemplate = value instanceof ValueTemplate ? value : ObjectTemplate.fromTemplateObject(value as TemplateObject);
+                const subTemplate = value instanceof ValueTemplate ? value : ValueTemplate.fromTypeInput(value as TypeOption);
 
                 this.keys.add(key);
                 this.entries.push([key, subTemplate]);
