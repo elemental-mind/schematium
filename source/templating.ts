@@ -20,6 +20,7 @@ export interface SchemaAPI<T> extends SchemaBaseAPI<T>
     validate(value: unknown, settings?: ValidationSettings): ValidationResult;
     parseString<T>(value: string, settings?: ValidationSettings): ParseResult<T>;
     getDefault(): Partial<T> | undefined;
+    schemaAlignedAssign(base: T, ...overrides: any[]): T;
 }
 
 export interface TemplateAPI<T> extends OptionalityAPI<T>, DefaultsAPI<T>, CheckAPI<T> { };
@@ -332,6 +333,11 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
         getDefault()
         {
             return this.cloneDefaultWhenDefaultRequested ? structuredClone(this.default) : this.default;
+        }
+
+        schemaAlignedAssign(base: T, ...overrides: any[]): T
+        {
+            throw new Error();
         }
     }
 
