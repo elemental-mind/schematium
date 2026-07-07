@@ -590,7 +590,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
             for (const [key, value] of Object.entries(templateObject))
             {
-                const subTemplate = value instanceof ValueTemplate ? value : ObjectTemplate.fromTemplateObject(value as TemplateObject);
+                const subTemplate = value instanceof ValueTemplate ? value : ValueTemplate.fromTypeInput(value as TypeOption);
 
                 this.keys.add(key);
                 this.entries.push([key, subTemplate]);
