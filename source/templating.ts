@@ -221,7 +221,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return new VariadicTemplate<any>(...valueTemplates);
         }
 
-        readonly parsingPriority: number = 3;
+        public readonly matchingPriority: number = 3;
         public isOptional = false;
         public customValidator?: ((value: T) => boolean) | ((value: T, validator: ValidationAPI) => void);
         public cloneDefaultWhenDefaultRequested = true;
@@ -344,7 +344,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
     class StringTemplate extends ValueTemplate<string>
     {
-        readonly parsingPriority: number = 4;
+        readonly matchingPriority: number = 4;
 
         parseRaw<T>(value: string, validator: Validator): T | undefined
         {
@@ -359,7 +359,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
     class NumberTemplate extends ValueTemplate<number>
     {
-        readonly parsingPriority: number = 0;
+        readonly matchingPriority: number = 0;
 
         parseRaw<T>(value: string, validator: Validator): T | undefined
         {
@@ -380,7 +380,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
     class BooleanTemplate extends ValueTemplate<boolean>
     {
-        readonly parsingPriority: number = 1;
+        readonly matchingPriority: number = 1;
 
         parseRaw<T>(value: string, validator: Validator): T | undefined
         {
@@ -447,7 +447,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
         {
             super();
             this.permittedTypes = permittedTypes;
-            this.sortForParsingPriority();
+            this.sortForMatchingPriority();
 
             const objectShapes = this.permittedTypes.filter(type => type instanceof ObjectTemplate);
 
@@ -517,9 +517,9 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return matched ? validator : validator.rejectWith(UnknownValue, "Value not in list of allowed types");
         }
 
-        private sortForParsingPriority()
+        private sortForMatchingPriority()
         {
-            this.permittedTypes.sort((a, b) => a.parsingPriority - b.parsingPriority);
+            this.permittedTypes.sort((a, b) => a.matchingPriority - b.matchingPriority);
         }
 
         private buildObjectFingerprints(objectShapes: ObjectTemplate<any>[])
@@ -666,7 +666,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
     abstract class CollectionTemplate<T> extends ValueTemplate<T> implements CollectionTemplateAPI<T>
     {
-        readonly parsingPriority: number = 2;
+        readonly matchingPriority: number = 2;
         protected entryTemplate: ValueTemplate<any> | VariadicTemplate<any>;
         protected entryGuard?: ((key: string | number, value: CollectionEntryType<T>) => boolean) | ((key: string | number, value: CollectionEntryType<T>, validator: ValidationAPI) => void);
 
