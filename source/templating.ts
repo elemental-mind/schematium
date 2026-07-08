@@ -20,7 +20,7 @@ export interface SchemaAPI<T> extends SchemaBaseAPI<T>
     validate(value: unknown, settings?: ValidationSettings): ValidationResult;
     parseString<T>(value: string, settings?: ValidationSettings): ParseResult<T>;
     getDefault(): Partial<T> | undefined;
-    schemaAlignedAssign(base: T, ...overrides: any[]): T;
+    schemaAlignedAssign(base: Partial<T>, ...overrides: Partial<T>[]): Partial<T>;
 }
 
 export interface TemplateAPI<T> extends OptionalityAPI<T>, DefaultsAPI<T>, CheckAPI<T> { };
@@ -336,9 +336,23 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return this.cloneDefaultWhenDefaultRequested ? structuredClone(this.default) : this.default;
         }
 
-        schemaAlignedAssign(base: T, ...overrides: any[]): T
+        schemaAlignedAssign(base: Partial<T>, ...overrides: Partial<T>[]): Partial<T>
         {
-            throw new Error();
+            let currentBase = base;
+            for (const override of overrides)
+            {
+                if (!this.check(override, { allowPartial: true, allowUnknowns: false }))
+                    throw new Error("Override is not satisfying schema.");
+                currentBase = this.mergeCheckedValue(currentBase, override);
+            }
+
+            return currentBase;
+        }
+
+        mergeCheckedValue(base: Partial<T>, checkedOverride: Partial<T>): Partial<T>
+        {
+            //In the simple case for primitive types we just return the override;
+            return checkedOverride as T;
         }
     }
 
