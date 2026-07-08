@@ -281,7 +281,20 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return validator.result.success ? new ParseSuccessResult<T>(resultValue as any) : validator.result;
         }
 
-        parseObject<T>(value: string, validator: Validator): T | undefined
+        parseRaw(value: string, validator: Validator): T | undefined
+        {
+            const parsedValue = this.parseBase(value, validator);
+
+            if (this.identifiesBaseType(parsedValue))
+                return parsedValue as T;
+
+            validator.rejectWith(ParseError, "'" + value + "' can not be interpreted as " + this.typeLabel);
+            return undefined;
+        }
+
+        abstract parseBase(value: string, validator: Validator): T | undefined;
+
+        parseObject(value: string, validator: Validator): T | undefined
         {
             let result: T | undefined;
             try { result = JSON.parse(value); }
@@ -290,14 +303,10 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
                 validator.rejectWith(ParseError, (e as any)?.message ?? "JSON Parsing Error");
                 return undefined;
             }
-
-            const preValidationIssueCount = validator.issueCount;
-            this.validateType(result as any, validator);
-
-            return (preValidationIssueCount === validator.issueCount) ? result : undefined;
+            return result;
         }
 
-        abstract parseRaw<T>(value: string, validator: Validator): T | undefined;
+        abstract identifiesBaseType(value: unknown): boolean;
 
         check(value: unknown, settings?: ValidationTolerances): value is T
         {
@@ -329,7 +338,10 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return validator;
         }
 
-        abstract validateType(value: unknown, validator: Validator): Validator;
+        validateType(value: unknown, validator: Validator): Validator
+        {
+            return this.identifiesBaseType(value) ? validator : validator.rejectWith(TypeMismatch, this.typeLabel + " expected");
+        }
 
         getDefault()
         {
@@ -360,14 +372,14 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
     {
         readonly matchingPriority: number = 4;
 
-        parseRaw<T>(value: string, validator: Validator): T | undefined
+        parseBase(value: string, validator: Validator): string | undefined
         {
-            return value as T;
+            return value;
         }
 
-        validateType(value: unknown, validator: Validator)
+        identifiesBaseType(value: unknown): boolean
         {
-            return typeof value === "string" ? validator : validator.rejectWith(TypeMismatch, "String expected");
+            return typeof value === "string";
         }
     }
 
@@ -375,20 +387,18 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
     {
         readonly matchingPriority: number = 0;
 
-        parseRaw<T>(value: string, validator: Validator): T | undefined
+        parseBase(value: string, validator: Validator): number | undefined
         {
-            const parsed = Number(value);
+            if (value.trim() !== "")
+                return Number(value);
 
-            if (value.trim() !== "" && Number.isFinite(parsed))
-                return parsed as T;
-
-            validator.rejectWith(ParseError, "'" + value + "' can not be interpreted as Number");
+            validator.rejectWith(ParseError, "'" + value + "' can not be parsed as number");
             return undefined;
         }
 
-        validateType(value: unknown, validator: Validator)
+        identifiesBaseType(value: unknown): boolean
         {
-            return (typeof value === "number" && Number.isFinite(value)) ? validator : validator.rejectWith(TypeMismatch, "Number expected");
+            return (typeof value === "number" && Number.isFinite(value));
         }
     }
 
@@ -396,19 +406,17 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
     {
         readonly matchingPriority: number = 1;
 
-        parseRaw<T>(value: string, validator: Validator): T | undefined
+        parseBase(value: string, validator: Validator): boolean | undefined
         {
             const lowered = value.trim().toLowerCase();
-            if (lowered === "true" || lowered === "1") return true as T;
-            if (lowered === "false" || lowered === "0") return false as T;
-
-            validator.rejectWith(ParseError, "'" + value + "' can not be interpreted as Boolean");
+            if (lowered === "true" || lowered === "1") return true;
+            if (lowered === "false" || lowered === "0") return false;
             return undefined;
         }
 
-        validateType(value: unknown, validator: Validator)
+        identifiesBaseType(value: unknown): boolean
         {
-            return (typeof value === "boolean") ? validator : validator.rejectWith(TypeMismatch, "Boolean Expected");
+            return typeof value === "boolean";
         }
     }
 
@@ -419,32 +427,20 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
         constructor(permittedValue: T)
         {
-            switch (typeof permittedValue)
-            {
-                case "number":
-                case "string":
-                    break;
-                default:
-                    throw new Error("Only numbers or strings permitted as literal types");
-            }
-
             super();
             this.permittedValue = permittedValue;
             this.permittedValueTemplate = ValueTemplate.fromExample(permittedValue);
+            this.parseBase = this.permittedValueTemplate.parseBase;
+
+            if (!(this.permittedValueTemplate instanceof NumberTemplate || this.permittedValueTemplate instanceof StringTemplate))
+                throw new Error("Only numbers or strings permitted as literal types");
         }
 
-        parseRaw<T>(value: string, validator: Validator): T | undefined
-        {
-            const result = this.permittedValueTemplate.parseRaw(value, validator);
-            if (result === this.permittedValue)
-                return result as T;
+        declare parseBase;
 
-            validator.rejectWith(ParseError, "'" + value + "' does not match literal '" + this.permittedValue + "'");
-        }
-
-        validateType(value: unknown, validator: Validator): Validator
+        identifiesBaseType(value: unknown): boolean
         {
-            return (value === this.permittedValue) ? validator : validator.rejectWith(TypeMismatch, "Not matching literal value: '" + this.permittedValue + "'");
+            return value === this.permittedValue;
         }
     }
 
@@ -507,26 +503,10 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
 
         validateType(value: unknown, validator: Validator)
         {
-            if (this.objectFingerprints)
-            {
-                //If we have a return value we have a surefire way to discern this object from other object templates
-                //If we can not fingerprint the object we fall back to brute force validation
-                const objectTemplate = this.identifyObjectTemplateByFingerprint(value as Record<string, any>);
-                if (objectTemplate)
-                    return objectTemplate.validateWithValidator(value, validator);
-            }
-
-            const fastSubValidator = Validator.getFastSubValidator(validator);
-
-            let matched = false;
-            for (const permittedType of this.permittedTypes)
-            {
-                matched = permittedType.validateWithValidator(value, fastSubValidator).result === ValidationResult.Success;
-
-                if (matched) break; else fastSubValidator.refresh();
-            }
-
-            fastSubValidator.release();
+        identifiesBaseType(value: unknown): boolean
+        {
+            return this.permittedTypes.some(type => type.identifiesBaseType(value));
+        }
 
             return matched ? validator : validator.rejectWith(UnknownValue, "Value not in list of allowed types");
         }
@@ -628,9 +608,11 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return this.default !== undefined || this.membersWithDefaultValues.size !== 0;
         }
 
-        parseRaw<T>(value: string, validator: Validator): T | undefined
+        parseBase = this.parseObject;
+
+        identifiesBaseType(value: unknown): boolean
         {
-            return this.parseObject(value, validator);
+            return value !== null && typeof value === "object" && !Array.isArray(value);
         }
 
         validateType(value: T, validator: Validator)
@@ -698,10 +680,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return this;
         }
 
-        parseRaw<T>(value: string, validator: Validator): T | undefined
-        {
-            return this.parseObject(value, validator);
-        }
+        parseBase = this.parseObject;
 
         protected validateEntry(key: string | number, entry: any, validator: Validator): Validator
         {
@@ -734,6 +713,8 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return new RecordTemplate<InferTypeDefinitionType<T[number]>>(elementType);
         }
 
+        identifiesBaseType = ObjectTemplate.prototype.identifiesBaseType;
+
         validateType(value: Record<string, T>, validator: Validator)
         {
             if (typeof value !== "object" || value === null || Array.isArray(value))
@@ -758,6 +739,11 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
         {
             const elementType = ValueTemplate.fromTypeInputs(...types);
             return new ArrayTemplate<InferTypeDefinitionType<T[number]>>(elementType);
+        }
+
+        identifiesBaseType(value: unknown): boolean
+        {
+            return Array.isArray(value);
         }
 
         validateType(value: T[], validator: Validator)
@@ -798,11 +784,11 @@ export abstract class Validator
         return validator;
     }
 
-    static getFastSubValidator(mainValidator: Validator)
+    static getFastSubValidator(settings: ValidationSettings)
     {
         const subValidator = this.FastValidatorCache.pop() ?? new FastValidator();
         subValidator.refresh();
-        subValidator.adoptSettings(mainValidator);
+        subValidator.adoptSettings(settings);
         return subValidator;
     }
 
@@ -810,7 +796,7 @@ export abstract class Validator
     allowUnknowns = false;
 
     abstract pathTrace: Array<String | Number>;
-    continueValidating: boolean = true;
+    continueValidating = true;
     issueCount = 0;
 
     result: ValidationResult = ValidationResult.Success;
