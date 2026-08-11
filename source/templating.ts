@@ -270,29 +270,26 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
         parseString<T>(value: string, settings: ValidationSettings = Validator.DefaultSettings): ParseResult<T>
         {
             const validator = Validator.withSettings(settings);
-            const parsed = this.parseWithValidator<T>(value, validator);
+            const resultValue = this.parseWithValidation(value, validator);
+            const parsed = validator.result.success ? new ParseSuccessResult<T>(resultValue as any) : validator.result;
             validator.release();
             return parsed;
         }
 
-        parseWithValidator<T>(value: string, validator: Validator): ParseResult<T>
+        parseWithValidation(value: string, validator: Validator): T | undefined
         {
-            const resultValue = this.parseRaw(value, validator);
-            return validator.result.success ? new ParseSuccessResult<T>(resultValue as any) : validator.result;
-        }
+            const preParseIssueCount = validator.issueCount;
+            const parsedValue = this.parseIntoRawType(value, validator);
 
-        parseRaw(value: string, validator: Validator): T | undefined
-        {
-            const parsedValue = this.parseBase(value, validator);
+            if (validator.issueCount !== preParseIssueCount)
+                return undefined;
 
-            if (this.identifiesBaseType(parsedValue))
+            if (this.validateWithValidator(parsedValue, validator).result.success)
                 return parsedValue as T;
-
-            validator.rejectWith(ParseError, "'" + value + "' can not be interpreted as " + this.typeLabel);
-            return undefined;
         }
 
-        abstract parseBase(value: string, validator: Validator): T | undefined;
+        abstract parseIntoRawType(value: string, validator: Validator): T | undefined;
+        abstract identifiesBaseType(value: unknown): boolean;
 
         parseObject(value: string, validator: Validator): T | undefined
         {
@@ -305,8 +302,6 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             }
             return result;
         }
-
-        abstract identifiesBaseType(value: unknown): boolean;
 
         check(value: unknown, settings?: ValidationTolerances): value is T
         {
@@ -372,7 +367,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
     {
         readonly matchingPriority: number = 4;
 
-        parseBase(value: string, validator: Validator): string | undefined
+        parseIntoRawType(value: string, validator: Validator): string | undefined
         {
             return value;
         }
@@ -387,7 +382,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
     {
         readonly matchingPriority: number = 0;
 
-        parseBase(value: string, validator: Validator): number | undefined
+        parseIntoRawType(value: string, validator: Validator): number | undefined
         {
             if (value.trim() !== "")
                 return Number(value);
@@ -406,12 +401,13 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
     {
         readonly matchingPriority: number = 1;
 
-        parseBase(value: string, validator: Validator): boolean | undefined
+        parseIntoRawType(value: string, validator: Validator): boolean | undefined
         {
             const lowered = value.trim().toLowerCase();
             if (lowered === "true" || lowered === "1") return true;
             if (lowered === "false" || lowered === "0") return false;
-            return undefined;
+
+            validator.rejectWith(ParseError, "'" + value + "' can not be parsed as boolean");
         }
 
         identifiesBaseType(value: unknown): boolean
@@ -430,17 +426,26 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             super();
             this.permittedValue = permittedValue;
             this.permittedValueTemplate = ValueTemplate.fromExample(permittedValue);
-            this.parseBase = this.permittedValueTemplate.parseBase;
 
-            if (!(this.permittedValueTemplate instanceof NumberTemplate || this.permittedValueTemplate instanceof StringTemplate))
-                throw new Error("Only numbers or strings permitted as literal types");
+            if (!(this.permittedValueTemplate instanceof NumberTemplate ||
+                this.permittedValueTemplate instanceof StringTemplate ||
+                this.permittedValueTemplate instanceof BooleanTemplate))
+                throw new Error("Only numbers, booleans or strings permitted as literal types");
         }
 
-        declare parseBase;
+        parseIntoRawType(value: string, validator: Validator): T | undefined
+        {
+            return this.permittedValueTemplate.parseIntoRawType(value, validator);
+        }
+
+        validateType(value: unknown, validator: Validator): Validator
+        {
+            return value === this.permittedValue ? validator : validator.rejectWith(TypeMismatch, `Literal "${this.permittedValue}" expected`);
+        }
 
         identifiesBaseType(value: unknown): boolean
         {
-            return value === this.permittedValue;
+            return this.permittedValueTemplate.identifiesBaseType(value);
         }
     }
 
@@ -456,110 +461,27 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
         constructor(...permittedTypes: ValueTemplate<any>[])
         {
             super();
-            this.permittedTypes = permittedTypes;
-            this.sortForMatchingPriority();
-
-            const objectShapes = this.permittedTypes.filter(type => type instanceof ObjectTemplate);
-
-            //If we have multiple object shapes it makes sense to build a fingerprint map for quicker validation
-            //It only makes sense to do object fingerprinting if we don't have a record template also in the set
-            if (objectShapes.length >= 2 && !this.permittedTypes.some(template => template instanceof RecordTemplate))
-                this.buildObjectFingerprints(objectShapes);
         }
 
-        parseRaw<T>(value: string, validator: Validator): T | undefined
+        parseWithValidation(input: string, validator: Validator): T | undefined
         {
             fastPath:
             if (this.objectFingerprints)
             {
-                let parsedValue: any;
-                try { parsedValue = JSON.parse(value); } catch { break fastPath; }
-
-                const matchedShape = this.identifyObjectTemplateByFingerprint(parsedValue);
-                if (matchedShape)
-                    return validator.issueCount === matchedShape.validateWithValidator(parsedValue, validator).issueCount ? parsedValue as T : undefined;
-            }
-
-            const fastSubValidator = Validator.getFastSubValidator(validator);
-
-            let result: T | undefined;
-            let match;
-            for (const permittedType of this.permittedTypes)
-            {
-                result = permittedType.parseRaw(value, fastSubValidator);
-
-                if (match = fastSubValidator.issueCount === 0) break;
-
-                fastSubValidator.refresh();
-            }
-
-            fastSubValidator.release();
-
-            if (match) return result as T;
+        parseWithValidation(input: string, validator: Validator): T | undefined
 
             validator.rejectWith(UnknownValue, "'" + value + "' can not be interpreted as a permitted value");
             return undefined;
         }
 
-        validateType(value: unknown, validator: Validator)
+        parseIntoRawType(input: string, validator: Validator): T | undefined
         {
         identifiesBaseType(value: unknown): boolean
         {
-            return this.permittedTypes.some(type => type.identifiesBaseType(value));
         }
 
-            return matched ? validator : validator.rejectWith(UnknownValue, "Value not in list of allowed types");
-        }
-
-        private sortForMatchingPriority()
+        validateType(value: unknown, validator: Validator)
         {
-            this.permittedTypes.sort((a, b) => a.matchingPriority - b.matchingPriority);
-        }
-
-        private buildObjectFingerprints(objectShapes: ObjectTemplate<any>[])
-        {
-            const keyMap = new Map<string, KeyProfile>();
-            for (const shape of objectShapes)
-            {
-                for (const [key, keyTemplate] of shape.entries)
-                {
-                    const profile: KeyProfile = keyMap.get(key) ?? { templates: [], templateTypes: new Set() };
-                    profile.templates.push({ shape, keyTemplate: keyTemplate });
-                    profile.templateTypes.add(keyTemplate instanceof LiteralTemplate ? keyTemplate.permittedValue : keyTemplate.constructor);
-                    keyMap.set(key, profile);
-                }
-            }
-
-            const uniqueKeys = new Map();
-            const typeDiscernableKeys = new Map();
-            for (const [key, profile] of keyMap.entries())
-            {
-                //We register keys not shared between variants
-                if (profile.templates.length === 1)
-                    uniqueKeys.set(key, profile.templates[0]);
-                //We register keys that have differing types and are discernable by types
-                else if (profile.templates.length >= 2 && profile.templates.length === profile.templateTypes.size)
-                    typeDiscernableKeys.set(key, profile.templates);
-            }
-
-            if (typeDiscernableKeys.size || uniqueKeys.size)
-                this.objectFingerprints = { uniqueKeys, typeDiscernableKeys };
-        }
-
-        private identifyObjectTemplateByFingerprint(value: Record<string, any>): ObjectTemplate<any> | undefined
-        {
-            if (typeof value !== "object" || value === null || Array.isArray(value))
-                return undefined;
-
-            for (const [key, { shape }] of this.objectFingerprints!.uniqueKeys)
-                if (key in value) return shape;
-
-            for (const [key, entryTypes] of this.objectFingerprints!.typeDiscernableKeys)
-                if (key in value)
-                    for (const { shape, keyTemplate } of entryTypes)
-                        if (keyTemplate.check(value[key])) return shape;
-
-            return undefined;
         }
     }
 
@@ -608,7 +530,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return this.default !== undefined || this.membersWithDefaultValues.size !== 0;
         }
 
-        parseBase = this.parseObject;
+        parseIntoRawType = this.parseObject;
 
         identifiesBaseType(value: unknown): boolean
         {
@@ -636,7 +558,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
                 if (!validator.continueValidating) break;
             }
 
-            if (!validator.allowUnknowns && this.strict)
+            if (validator.continueValidating && !validator.allowUnknowns && this.strict)
                 for (const key of Object.keys(input))
                     if (!this.keys.has(key) && !validator.rejectWith(UnknownMember, "Member '" + key + "' not allowed").continueValidating) break;
 
@@ -680,7 +602,7 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return this;
         }
 
-        parseBase = this.parseObject;
+        parseIntoRawType = this.parseObject;
 
         protected validateEntry(key: string | number, entry: any, validator: Validator): Validator
         {
