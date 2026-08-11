@@ -20,7 +20,7 @@ export interface SchemaAPI<T> extends SchemaBaseAPI<T>
     validate(value: unknown, settings?: ValidationSettings): ValidationResult;
     parseString<T>(value: string, settings?: ValidationSettings): ParseResult<T>;
     getDefault(): Partial<T> | undefined;
-    schemaAlignedAssign(base: Partial<T>, ...overrides: Partial<T>[]): Partial<T>;
+    patchOrOverride(base: Partial<T>, patch: Partial<T>): Partial<T>;
 }
 
 export interface TemplateAPI<T> extends OptionalityAPI<T>, DefaultsAPI<T>, CheckAPI<T> { };
@@ -343,23 +343,20 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
             return this.cloneDefaultWhenDefaultRequested ? structuredClone(this.default) : this.default;
         }
 
-        schemaAlignedAssign(base: Partial<T>, ...overrides: Partial<T>[]): Partial<T>
+        patchOrOverride(base: any, uncheckedPatch: any): any
         {
-            let currentBase = base;
-            for (const override of overrides)
-            {
-                if (!this.check(override, { allowPartial: true, allowUnknowns: false }))
-                    throw new Error("Override is not satisfying schema.");
-                currentBase = this.mergeCheckedValue(currentBase, override);
-            }
+            if (uncheckedPatch === undefined || uncheckedPatch === null)
+                return base;
 
-            return currentBase;
+            if (!this.check(uncheckedPatch, { allowPartial: true, allowUnknowns: false }))
+                throw new Error("Patch is not schema-conforming");
+
+            return this.merge(base, uncheckedPatch);
         }
 
-        mergeCheckedValue(base: Partial<T>, checkedOverride: Partial<T>): Partial<T>
+        merge(base: any, checkedPatch: any): any
         {
-            //In the simple case for primitive types we just return the override;
-            return checkedOverride as T;
+            return checkedPatch;
         }
     }
 
@@ -388,7 +385,6 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
                 return Number(value);
 
             validator.rejectWith(ParseError, "'" + value + "' can not be parsed as number");
-            return undefined;
         }
 
         identifiesBaseType(value: unknown): boolean
@@ -450,38 +446,128 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
     }
 
     type ShapeEntryTemplatePair = { shape: ObjectTemplate<any>, keyTemplate: ValueTemplate<any>; };
-    type KeyProfile = { templates: ShapeEntryTemplatePair[], templateTypes: Set<Function>; };
     type ObjectFingerprints = { uniqueKeys: Map<string, ShapeEntryTemplatePair>, typeDiscernableKeys: Map<string, ShapeEntryTemplatePair[]>; };
+    type IterableValue<T> = T extends Iterable<infer E> ? E : never;
+    type FilterMatch<Variant, Result> = { input: Variant; result: Result; };
 
     class VariadicTemplate<T> extends ValueTemplate<T>
     {
         public permittedTypes: ValueTemplate<any>[] = [];
+        //This map groups by base type parsing strategies to avoid calling them over and over again for the same input. E.g. we might have multiple type candidates that utitilize JSON.parse.
+        public parseStrategyGroups?: Map<ValueTemplate<any>["parseIntoRawType"], ValueTemplate<any>[]>;
         public objectFingerprints?: ObjectFingerprints;
 
         constructor(...permittedTypes: ValueTemplate<any>[])
         {
             super();
+            this.permittedTypes = permittedTypes.sort((type1, type2) => type1.matchingPriority - type2.matchingPriority);
+
+            for (const template of permittedTypes)
+            {
+                //We need this for now. Otherwise we clash in the parser map as it maps two Variadic Types into one parse pass.
+                if (template instanceof VariadicTemplate)
+                    throw new Error("Nesting a variadic template in a variadic template not allowed. Flatten the type.");
+            }
         }
 
         parseWithValidation(input: string, validator: Validator): T | undefined
         {
-            fastPath:
-            if (this.objectFingerprints)
-            {
-        parseWithValidation(input: string, validator: Validator): T | undefined
+            const parsedAndMatchPrioSortedUnvalidatedValueTemplatePairs = this.parseIntoRawType(input, validator) as { template: ValueTemplate<any>, parsedValue: T; }[];
 
-            validator.rejectWith(UnknownValue, "'" + value + "' can not be interpreted as a permitted value");
+            if (!parsedAndMatchPrioSortedUnvalidatedValueTemplatePairs.length)
+            {
+                validator.rejectWith(ParseError, "None of the given templates can parse'" + input + "' successfully");
+                return undefined;
+            }
+
+            const validatedValueTemplatePairs = this
+                .filterValidating(parsedAndMatchPrioSortedUnvalidatedValueTemplatePairs, validator, true,
+                    (valueTemplatePair, filterValidator) =>
+                        valueTemplatePair.template.validateWithValidator(valueTemplatePair.parsedValue, filterValidator));
+
+            if (validatedValueTemplatePairs.length)
+                return validatedValueTemplatePairs[0].input.parsedValue;
+
+            validator.rejectWith(UnknownValue, "'" + input + "' did parse, but can not be interpreted as a permitted value");
             return undefined;
         }
 
         parseIntoRawType(input: string, validator: Validator): T | undefined
         {
+            if (!this.parseStrategyGroups) this.groupTemplatesByParsingStrategy();
+
+            const parsedAndMatchPrioSortedRawValueTemplatePairs = this
+                .filterValidating(this.parseStrategyGroups!.values(), validator, false,
+                    (templates, filterValidator) =>
+                        //templates[0] is the representative that uses the same parse function as all the other templates in the array.
+                        templates[0].parseIntoRawType(input, filterValidator))
+                //We spread the results to template <==> value pairs for validation later
+                .flatMap(({ input: variant, result }) => variant.map(template => { return { template, parsedValue: result }; }));
+
+            return parsedAndMatchPrioSortedRawValueTemplatePairs as T;
+        }
+
         identifiesBaseType(value: unknown): boolean
         {
+            return this.permittedTypes.some(type => type.identifiesBaseType(value));
         }
 
         validateType(value: unknown, validator: Validator)
         {
+            const candidateTypes = this.permittedTypes.filter(type => type.identifiesBaseType(value));
+            const validatedTypes = this.filterValidating(candidateTypes, validator, true,
+                (candidate, filterValidator) => candidate.validateType(value, filterValidator)
+            );
+
+            return validatedTypes.length ? validator : validator.rejectWith(UnknownValue, "Value not in list of allowed types");
+        }
+
+        merge(base: any, override: any): any
+        {
+            const validatedBaseTypes = this.findMatchingTypes(base);
+            const validatedOverrideTypes = this.findMatchingTypes(override);
+
+            const commonType = validatedBaseTypes.find(baseType => validatedOverrideTypes.includes(baseType));
+
+            if (commonType)
+                return commonType.merge(base, override);
+
+            return override;
+        }
+
+        private findMatchingTypes(value: unknown): ValueTemplate<any>[]
+        {
+            const candidates = this.permittedTypes.filter(type => type.identifiesBaseType(value));
+            return this.filterValidating(candidates, { allowPartial: true, allowUnknowns: false }, false,
+                (candidate, filterValidator) => candidate.validateType(value, filterValidator)
+            ).map(result => result.input);
+        }
+
+        private filterValidating<VariantCollection extends Iterable<any>, Result>(inputs: VariantCollection, validationSettings: ValidationTolerances, failFast: boolean, checker: ((variant: IterableValue<VariantCollection>, filterValidator: Validator) => Result | undefined)): FilterMatch<IterableValue<VariantCollection>, Result>[]
+        {
+            const matches: FilterMatch<IterableValue<VariantCollection>, Result>[] = [];
+            const fastSubValidator = Validator.getFastSubValidator(validationSettings);
+
+            for (const input of inputs)
+            {
+                const result = checker(input, fastSubValidator)!;
+                if (!fastSubValidator.issueCount)
+                {
+                    matches.push({ input, result });
+                    if (failFast) break;
+                }
+                fastSubValidator.refresh();
+            }
+
+            fastSubValidator.release();
+            return matches;
+        }
+
+        private groupTemplatesByParsingStrategy()
+        {
+            this.parseStrategyGroups = new Map();
+            for (const template of this.permittedTypes)
+                this.parseStrategyGroups.get(template.parseIntoRawType)?.push(template) ?? this.parseStrategyGroups.set(template.parseIntoRawType, [template]);
         }
     }
 
@@ -563,6 +649,25 @@ function generateTemplatingClasses(BaseClass: new (...args: any[]) => any = Obje
                     if (!this.keys.has(key) && !validator.rejectWith(UnknownMember, "Member '" + key + "' not allowed").continueValidating) break;
 
             return validator;
+        }
+
+        merge(base: any, override: any): any
+        {
+            const baseObject = this.identifiesBaseType(base) ? base as Record<string, unknown> : {};
+            const overrideObject = override as Record<string, unknown>;
+            const result: Record<string, unknown> = {};
+
+            for (const [key, template] of this.entries)
+            {
+                if (Object.hasOwn(overrideObject, key))
+                    result[key] = template.merge(baseObject[key], overrideObject[key]);
+                else if (Object.hasOwn(baseObject, key))
+                    result[key] = baseObject[key];
+                else if (template.hasDefaultValue)
+                    result[key] = template.getDefault();
+            }
+
+            return result as Partial<T>;
         }
 
         getDefault(): T | undefined
