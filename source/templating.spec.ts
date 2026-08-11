@@ -16,6 +16,7 @@ export interface InjectionSchemaAPI
     validate(value: unknown, settings?: ValidationSettings): ValidationResult;
     parseString(value: string, settings?: ValidationSettings): ParseResult<ValueType<this>>;
     getDefault(): Partial<ValueType<this>> | undefined;
+    patchOrOverride(base: ValueType<this>, patch: any): ValueType<this>;
 }
 
 const { schema, string, number, boolean, object, valueOf, oneOf, record, recordOf, array, arrayOf } = generateTemplatingAPI<InjectionSchemaAPI>();
@@ -1593,7 +1594,7 @@ export class ParseResultIssueTests
         const result = t.parseString("not-a-number", { mode: "thorough" }) as RejectionResult;
 
         assert.strictEqual(result.issues.length > 0, true, "expected at least one issue for invalid number parse");
-        assert.strictEqual(result.issues[0].kind, "ParseError");
+        assert.strictEqual(result.issues[0].kind, "TypeMismatch");
     }
 
     parseStringFailureReportsMessage()
@@ -1833,5 +1834,435 @@ export class CollectionThoroughValidationTests
         assert.strictEqual(result.success, false);
         assert.ok(result.issues.length > 0, "expected at least one type mismatch issue for non-array");
         assert.strictEqual(result.issues[0].kind, "TypeMismatch");
+    }
+}
+
+// ============================================================
+// Schema-aligned assign
+// ============================================================
+
+export class SchemaAlignedAssignTests
+{
+    // --------------------------------------------------
+    // Simple object merging
+    // --------------------------------------------------
+
+    mergesPartialOverrideIntoBaseObject()
+    {
+        const t = schema({
+            host: string(),
+            port: number(),
+        });
+
+        const result = t.patchOrOverride(
+            { host: "localhost", port: 8080 },
+            { port: 3000 }
+        );
+
+        assert.deepStrictEqual(result, { host: "localhost", port: 3000 });
+    }
+
+    overrideReplacesAllKeysWhenAllProvided()
+    {
+        const t = schema({
+            host: string(),
+            port: number(),
+        });
+
+        const result = t.patchOrOverride(
+            { host: "localhost", port: 8080 },
+            { host: "example.com", port: 3000 }
+        );
+
+        assert.deepStrictEqual(result, { host: "example.com", port: 3000 });
+    }
+
+    rejectsOverrideKeysNotDefinedInSchema()
+    {
+        const t = schema({
+            host: string(),
+            port: number(),
+        });
+
+        assert.throws(() => t.patchOrOverride(
+            { host: "localhost", port: 8080 },
+            { host: "example.com", unknown: "not allowed" } as any
+        ));
+    }
+
+    emptyOverrideReturnsBaseUnchanged()
+    {
+        const t = schema({
+            host: string(),
+            port: number(),
+        });
+
+        const result = t.patchOrOverride(
+            { host: "localhost", port: 8080 },
+            {}
+        );
+
+        assert.deepStrictEqual(result, { host: "localhost", port: 8080 });
+    }
+
+    // --------------------------------------------------
+    // Variadic with two object shapes — variant switching
+    // --------------------------------------------------
+
+    variadicReplacesEntirelyWhenOverrideTargetsDifferentShape()
+    {
+        const t = valueOf(
+            { type: string(), value: number() },
+            { type: string(), label: string(), enabled: boolean() }
+        );
+
+        const result = t.patchOrOverride(
+            { type: "x", value: 123 },
+            { type: "y", label: "something", enabled: false }
+        );
+
+        // Override targets a different shape → full replace, no key leakage from base
+        assert.deepStrictEqual(result, { type: "y", label: "something", enabled: false });
+    }
+
+    variadicMergesWhenOverrideTargetsSameShape()
+    {
+        const t = valueOf(
+            { type: string(), value: number() },
+            { type: string(), label: string(), enabled: boolean() }
+        );
+
+        const result = t.patchOrOverride(
+            { type: "x", value: 123 },
+            { type: "x", value: 456 }
+        );
+
+        // Same shape → merge
+        assert.deepStrictEqual(result, { type: "x", value: 456 });
+    }
+
+    variadicPartialOverrideSameShapePreservesOtherKeys()
+    {
+        const t = valueOf(
+            { type: string(), value: number(), extra: string("default") },
+            { type: string(), label: string(), enabled: boolean() }
+        );
+
+        const result = t.patchOrOverride(
+            { type: "x", value: 123, extra: "keep-me" },
+            { value: 456 }
+        );
+
+        // Same shape, partial override → merge preserving non-overridden keys from base
+        assert.deepStrictEqual(result, { type: "x", value: 456, extra: "keep-me" });
+    }
+
+    variadicReplaceDropsStaleKeysFromPreviousShape()
+    {
+        const t = valueOf(
+            { type: string(), value: number() },
+            { type: string(), label: string(), enabled: boolean() }
+        );
+
+        const result = t.patchOrOverride(
+            { type: "x", value: 123 },
+            { type: "y", label: "new", enabled: true }
+        );
+
+        // Full replace to Shape B — `value` from Shape A must not leak through
+        assert.deepStrictEqual(result, { type: "y", label: "new", enabled: true });
+    }
+
+    variadicOverrideRejectsExtraneousKeys()
+    {
+        const t = valueOf(
+            { type: string(), value: number() },
+            { type: string(), label: string(), enabled: boolean() }
+        );
+
+        assert.throws(() => t.patchOrOverride(
+            { type: "x", value: 123 },
+            { type: "y", label: "new", enabled: true, unknown: 999 }
+        ));
+    }
+
+    // --------------------------------------------------
+    // Nested object merging
+    // --------------------------------------------------
+
+    nestedObjectMergesRecursively()
+    {
+        const t = schema({
+            name: string(),
+            settings: {
+                theme: string(),
+                volume: number(),
+            },
+        });
+
+        const result = t.patchOrOverride(
+            { name: "app", settings: { theme: "dark", volume: 80 } },
+            { settings: { volume: 50 } }
+        );
+
+        assert.deepStrictEqual(result, { name: "app", settings: { theme: "dark", volume: 50 } });
+    }
+
+    nestedObjectFullOverrideReplacesSubtree()
+    {
+        const t = schema({
+            name: string(),
+            settings: {
+                theme: string(),
+                volume: number(),
+            },
+        });
+
+        const result = t.patchOrOverride(
+            { name: "app", settings: { theme: "dark", volume: 80 } },
+            { settings: { theme: "light", volume: 20 } }
+        );
+
+        assert.deepStrictEqual(result, { name: "app", settings: { theme: "light", volume: 20 } });
+    }
+
+    nestedObjectRejectsUnknownKeysInSubtree()
+    {
+        const t = schema({
+            name: string(),
+            settings: {
+                theme: string(),
+                volume: number(),
+            },
+        });
+
+        assert.throws(() => t.patchOrOverride(
+            { name: "app", settings: { theme: "dark", volume: 80 } },
+            { settings: { theme: "light", unknown: "drop-me" } }
+        ));
+    }
+
+    rejectsWronglyTypedPrimitiveOverride()
+    {
+        const t = number();
+
+        assert.throws(() => t.patchOrOverride(42, "not-a-number"));
+    }
+
+    rejectsWronglyTypedObjectMemberOverride()
+    {
+        const t = schema({
+            host: string(),
+            port: number(),
+        });
+
+        assert.throws(() => t.patchOrOverride(
+            { host: "localhost", port: 8080 },
+            { port: "not-a-number" }
+        ));
+    }
+
+    rejectsWronglyTypedNestedVariadicMemberOverride()
+    {
+        const t = schema({
+            payload: valueOf(
+                { kind: string(), value: number() },
+                { kind: string(), enabled: boolean() }
+            ),
+        });
+
+        assert.throws(() => t.patchOrOverride(
+            { payload: { kind: "value", value: 10 } },
+            { payload: { value: "not-a-number" } }
+        ));
+    }
+
+    // --------------------------------------------------
+    // Nested variadic objects
+    // --------------------------------------------------
+
+    nestedVariadicFieldSwitchesShapeWithinParentObject()
+    {
+        const t = schema({
+            name: string(),
+            payload: valueOf(
+                { kind: string(), value: number() },
+                { kind: string(), label: string(), enabled: boolean() }
+            ),
+        });
+
+        const result = t.patchOrOverride(
+            { name: "test", payload: { kind: "a", value: 10 } },
+            { payload: { kind: "b", label: "override", enabled: true } }
+        );
+
+        // payload switches variant → full replace of the nested variadic, parent key preserved
+        assert.deepStrictEqual(result, { name: "test", payload: { kind: "b", label: "override", enabled: true } });
+    }
+
+    nestedVariadicFieldMergesWithinSameShape()
+    {
+        const t = schema({
+            name: string(),
+            payload: valueOf(
+                { kind: string(), value: number(), extra: string("default") },
+                { kind: string(), label: string(), enabled: boolean() }
+            ),
+        });
+
+        const result = t.patchOrOverride(
+            { name: "test", payload: { kind: "a", value: 10, extra: "keep" } },
+            { payload: { value: 99 } }
+        );
+
+        // payload stays in same variant → merge preserving base keys
+        assert.deepStrictEqual(result, { name: "test", payload: { kind: "a", value: 99, extra: "keep" } });
+    }
+
+    deeplyNestedVariadicSwitchesAtLeafLevel()
+    {
+        const t = schema({
+            app: string(),
+            config: {
+                target: valueOf(
+                    { mode: string(), retries: number() },
+                    { mode: string(), fallback: string(), timeout: number() }
+                ),
+            },
+        });
+
+        const result = t.patchOrOverride(
+            { app: "svc", config: { target: { mode: "direct", retries: 3 } } },
+            { config: { target: { mode: "proxy", fallback: "backup", timeout: 5000 } } }
+        );
+
+        // Deep nested variadic switches → leaf replaced entirely, parent keys preserved
+        assert.deepStrictEqual(result, { app: "svc", config: { target: { mode: "proxy", fallback: "backup", timeout: 5000 } } });
+    }
+
+    optionalsSwitchInDeepNestedTree()
+    {
+        const t = schema({
+            app: string(),
+            config: {
+                target: valueOf(
+                    { retries: number().optional, timeout: number().optional },
+                    { fallback: string().optional, port: number().optional }
+                ),
+            },
+        });
+
+        const result = t.patchOrOverride(
+            { app: "svc", config: { target: { retries: 3 } } },
+            { config: { target: { fallback: "backup" } } }
+        );
+
+        // Deep nested variadic switches → leaf replaced entirely, parent keys preserved
+        assert.deepStrictEqual(result, { app: "svc", config: { target: { fallback: "backup" } } });
+    }
+
+
+
+    // --------------------------------------------------
+    // Primitive values (non-object)
+    // --------------------------------------------------
+
+    primitiveStringOverrideReplacesValue()
+    {
+        const t = string();
+        const result = t.patchOrOverride("hello", "world");
+
+        assert.strictEqual(result, "world");
+    }
+
+    primitiveNumberOverrideReplacesValue()
+    {
+        const t = number();
+        const result = t.patchOrOverride(42, 100);
+
+        assert.strictEqual(result, 100);
+    }
+
+    variadicPrimitiveOverrideReplacesValue()
+    {
+        const t = valueOf(number, string);
+        const result = t.patchOrOverride(42, "hello");
+
+        assert.strictEqual(result, "hello");
+    }
+
+    // --------------------------------------------------
+    // Collections (arrays and records) — replace entirely
+    // --------------------------------------------------
+
+    arrayOverrideReplacesEntirely()
+    {
+        const t = arrayOf(number);
+        const result = t.patchOrOverride([1, 2, 3], [4, 5]);
+
+        assert.deepStrictEqual(result, [4, 5]);
+    }
+
+    recordOverrideReplacesEntirely()
+    {
+        const t = recordOf(string);
+        const result = t.patchOrOverride({ a: "x" }, { b: "y" });
+
+        assert.deepStrictEqual(result, { b: "y" });
+    }
+
+    // --------------------------------------------------
+    // Edge cases — undefined / null overrides
+    // --------------------------------------------------
+
+    undefinedOverrideIsSkipped()
+    {
+        const t = schema({
+            host: string(),
+            port: number(),
+        });
+
+        const result = t.patchOrOverride(
+            { host: "localhost", port: 8080 },
+            undefined as any
+        );
+
+        assert.deepStrictEqual(result, { host: "localhost", port: 8080 });
+    }
+
+    nullOverrideIsSkipped()
+    {
+        const t = schema({
+            host: string(),
+            port: number(),
+        });
+
+        const result = t.patchOrOverride(
+            { host: "localhost", port: 8080 },
+            null as any
+        );
+
+        assert.deepStrictEqual(result, { host: "localhost", port: 8080 });
+    }
+
+    // --------------------------------------------------
+    // Defaults — base populated from schema defaults when not provided
+    // --------------------------------------------------
+
+    usesSchemaDefaultsWhenBaseHasMissingOptionalKeys()
+    {
+        const t = schema({
+            host: string(),
+            port: number(8080),
+            debug: boolean(false),
+        });
+
+        // Base only provides `host`; port and debug should use defaults as base values
+        const result = t.patchOrOverride(
+            { host: "localhost" } as any,
+            { debug: true }
+        );
+
+        assert.deepStrictEqual(result, { host: "localhost", port: 8080, debug: true });
     }
 }
