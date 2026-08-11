@@ -16,7 +16,7 @@ export interface InjectionSchemaAPI
     validate(value: unknown, settings?: ValidationSettings): ValidationResult;
     parseString(value: string, settings?: ValidationSettings): ParseResult<ValueType<this>>;
     getDefault(): Partial<ValueType<this>> | undefined;
-    schemaAlignedAssign(base: ValueType<this>, ...overrides: any[]): ValueType<this>;
+    patchOrOverride(base: ValueType<this>, patch: any): ValueType<this>;
 }
 
 const { schema, string, number, boolean, object, valueOf, oneOf, record, recordOf, array, arrayOf } = generateTemplatingAPI<InjectionSchemaAPI>();
@@ -1594,7 +1594,7 @@ export class ParseResultIssueTests
         const result = t.parseString("not-a-number", { mode: "thorough" }) as RejectionResult;
 
         assert.strictEqual(result.issues.length > 0, true, "expected at least one issue for invalid number parse");
-        assert.strictEqual(result.issues[0].kind, "ParseError");
+        assert.strictEqual(result.issues[0].kind, "TypeMismatch");
     }
 
     parseStringFailureReportsMessage()
@@ -1854,7 +1854,7 @@ export class SchemaAlignedAssignTests
             port: number(),
         });
 
-        const result = t.schemaAlignedAssign(
+        const result = t.patchOrOverride(
             { host: "localhost", port: 8080 },
             { port: 3000 }
         );
@@ -1869,7 +1869,7 @@ export class SchemaAlignedAssignTests
             port: number(),
         });
 
-        const result = t.schemaAlignedAssign(
+        const result = t.patchOrOverride(
             { host: "localhost", port: 8080 },
             { host: "example.com", port: 3000 }
         );
@@ -1877,19 +1877,17 @@ export class SchemaAlignedAssignTests
         assert.deepStrictEqual(result, { host: "example.com", port: 3000 });
     }
 
-    dropsOverrideKeysNotDefinedInSchema()
+    rejectsOverrideKeysNotDefinedInSchema()
     {
         const t = schema({
             host: string(),
             port: number(),
         });
 
-        const result = t.schemaAlignedAssign(
+        assert.throws(() => t.patchOrOverride(
             { host: "localhost", port: 8080 },
-            { host: "example.com", unknown: "should be dropped" } as any
-        );
-
-        assert.deepStrictEqual(result, { host: "example.com", port: 8080 });
+            { host: "example.com", unknown: "not allowed" } as any
+        ));
     }
 
     emptyOverrideReturnsBaseUnchanged()
@@ -1899,7 +1897,7 @@ export class SchemaAlignedAssignTests
             port: number(),
         });
 
-        const result = t.schemaAlignedAssign(
+        const result = t.patchOrOverride(
             { host: "localhost", port: 8080 },
             {}
         );
@@ -1918,7 +1916,7 @@ export class SchemaAlignedAssignTests
             { type: string(), label: string(), enabled: boolean() }
         );
 
-        const result = t.schemaAlignedAssign(
+        const result = t.patchOrOverride(
             { type: "x", value: 123 },
             { type: "y", label: "something", enabled: false }
         );
@@ -1934,7 +1932,7 @@ export class SchemaAlignedAssignTests
             { type: string(), label: string(), enabled: boolean() }
         );
 
-        const result = t.schemaAlignedAssign(
+        const result = t.patchOrOverride(
             { type: "x", value: 123 },
             { type: "x", value: 456 }
         );
@@ -1950,7 +1948,7 @@ export class SchemaAlignedAssignTests
             { type: string(), label: string(), enabled: boolean() }
         );
 
-        const result = t.schemaAlignedAssign(
+        const result = t.patchOrOverride(
             { type: "x", value: 123, extra: "keep-me" },
             { value: 456 }
         );
@@ -1966,7 +1964,7 @@ export class SchemaAlignedAssignTests
             { type: string(), label: string(), enabled: boolean() }
         );
 
-        const result = t.schemaAlignedAssign(
+        const result = t.patchOrOverride(
             { type: "x", value: 123 },
             { type: "y", label: "new", enabled: true }
         );
@@ -1975,21 +1973,17 @@ export class SchemaAlignedAssignTests
         assert.deepStrictEqual(result, { type: "y", label: "new", enabled: true });
     }
 
-    variadicOverrideWithExtraneousKeysRelativeToTargetShapeDropsThem()
+    variadicOverrideRejectsExtraneousKeys()
     {
         const t = valueOf(
             { type: string(), value: number() },
             { type: string(), label: string(), enabled: boolean() }
         );
 
-        // Override targets Shape B but also carries `value` (a Shape A key)
-        const result = t.schemaAlignedAssign(
+        assert.throws(() => t.patchOrOverride(
             { type: "x", value: 123 },
-            { type: "y", label: "new", enabled: true, value: 999 }
-        );
-
-        // `value` should be stripped — it's not in Shape B's schema
-        assert.deepStrictEqual(result, { type: "y", label: "new", enabled: true });
+            { type: "y", label: "new", enabled: true, unknown: 999 }
+        ));
     }
 
     // --------------------------------------------------
@@ -2006,7 +2000,7 @@ export class SchemaAlignedAssignTests
             },
         });
 
-        const result = t.schemaAlignedAssign(
+        const result = t.patchOrOverride(
             { name: "app", settings: { theme: "dark", volume: 80 } },
             { settings: { volume: 50 } }
         );
@@ -2024,7 +2018,7 @@ export class SchemaAlignedAssignTests
             },
         });
 
-        const result = t.schemaAlignedAssign(
+        const result = t.patchOrOverride(
             { name: "app", settings: { theme: "dark", volume: 80 } },
             { settings: { theme: "light", volume: 20 } }
         );
@@ -2032,7 +2026,7 @@ export class SchemaAlignedAssignTests
         assert.deepStrictEqual(result, { name: "app", settings: { theme: "light", volume: 20 } });
     }
 
-    nestedObjectDropsUnknownKeysInSubtree()
+    nestedObjectRejectsUnknownKeysInSubtree()
     {
         const t = schema({
             name: string(),
@@ -2042,12 +2036,45 @@ export class SchemaAlignedAssignTests
             },
         });
 
-        const result = t.schemaAlignedAssign(
+        assert.throws(() => t.patchOrOverride(
             { name: "app", settings: { theme: "dark", volume: 80 } },
             { settings: { theme: "light", unknown: "drop-me" } }
-        );
+        ));
+    }
 
-        assert.deepStrictEqual(result, { name: "app", settings: { theme: "light", volume: 80 } });
+    rejectsWronglyTypedPrimitiveOverride()
+    {
+        const t = number();
+
+        assert.throws(() => t.patchOrOverride(42, "not-a-number"));
+    }
+
+    rejectsWronglyTypedObjectMemberOverride()
+    {
+        const t = schema({
+            host: string(),
+            port: number(),
+        });
+
+        assert.throws(() => t.patchOrOverride(
+            { host: "localhost", port: 8080 },
+            { port: "not-a-number" }
+        ));
+    }
+
+    rejectsWronglyTypedNestedVariadicMemberOverride()
+    {
+        const t = schema({
+            payload: valueOf(
+                { kind: string(), value: number() },
+                { kind: string(), enabled: boolean() }
+            ),
+        });
+
+        assert.throws(() => t.patchOrOverride(
+            { payload: { kind: "value", value: 10 } },
+            { payload: { value: "not-a-number" } }
+        ));
     }
 
     // --------------------------------------------------
@@ -2064,7 +2091,7 @@ export class SchemaAlignedAssignTests
             ),
         });
 
-        const result = t.schemaAlignedAssign(
+        const result = t.patchOrOverride(
             { name: "test", payload: { kind: "a", value: 10 } },
             { payload: { kind: "b", label: "override", enabled: true } }
         );
@@ -2083,7 +2110,7 @@ export class SchemaAlignedAssignTests
             ),
         });
 
-        const result = t.schemaAlignedAssign(
+        const result = t.patchOrOverride(
             { name: "test", payload: { kind: "a", value: 10, extra: "keep" } },
             { payload: { value: 99 } }
         );
@@ -2104,7 +2131,7 @@ export class SchemaAlignedAssignTests
             },
         });
 
-        const result = t.schemaAlignedAssign(
+        const result = t.patchOrOverride(
             { app: "svc", config: { target: { mode: "direct", retries: 3 } } },
             { config: { target: { mode: "proxy", fallback: "backup", timeout: 5000 } } }
         );
@@ -2113,6 +2140,29 @@ export class SchemaAlignedAssignTests
         assert.deepStrictEqual(result, { app: "svc", config: { target: { mode: "proxy", fallback: "backup", timeout: 5000 } } });
     }
 
+    optionalsSwitchInDeepNestedTree()
+    {
+        const t = schema({
+            app: string(),
+            config: {
+                target: valueOf(
+                    { retries: number().optional, timeout: number().optional },
+                    { fallback: string().optional, port: number().optional }
+                ),
+            },
+        });
+
+        const result = t.patchOrOverride(
+            { app: "svc", config: { target: { retries: 3 } } },
+            { config: { target: { fallback: "backup" } } }
+        );
+
+        // Deep nested variadic switches → leaf replaced entirely, parent keys preserved
+        assert.deepStrictEqual(result, { app: "svc", config: { target: { fallback: "backup" } } });
+    }
+
+
+
     // --------------------------------------------------
     // Primitive values (non-object)
     // --------------------------------------------------
@@ -2120,7 +2170,7 @@ export class SchemaAlignedAssignTests
     primitiveStringOverrideReplacesValue()
     {
         const t = string();
-        const result = t.schemaAlignedAssign("hello", "world");
+        const result = t.patchOrOverride("hello", "world");
 
         assert.strictEqual(result, "world");
     }
@@ -2128,7 +2178,7 @@ export class SchemaAlignedAssignTests
     primitiveNumberOverrideReplacesValue()
     {
         const t = number();
-        const result = t.schemaAlignedAssign(42, 100);
+        const result = t.patchOrOverride(42, 100);
 
         assert.strictEqual(result, 100);
     }
@@ -2136,7 +2186,7 @@ export class SchemaAlignedAssignTests
     variadicPrimitiveOverrideReplacesValue()
     {
         const t = valueOf(number, string);
-        const result = t.schemaAlignedAssign(42, "hello");
+        const result = t.patchOrOverride(42, "hello");
 
         assert.strictEqual(result, "hello");
     }
@@ -2148,7 +2198,7 @@ export class SchemaAlignedAssignTests
     arrayOverrideReplacesEntirely()
     {
         const t = arrayOf(number);
-        const result = t.schemaAlignedAssign([1, 2, 3], [4, 5]);
+        const result = t.patchOrOverride([1, 2, 3], [4, 5]);
 
         assert.deepStrictEqual(result, [4, 5]);
     }
@@ -2156,46 +2206,9 @@ export class SchemaAlignedAssignTests
     recordOverrideReplacesEntirely()
     {
         const t = recordOf(string);
-        const result = t.schemaAlignedAssign({ a: "x" }, { b: "y" });
+        const result = t.patchOrOverride({ a: "x" }, { b: "y" });
 
         assert.deepStrictEqual(result, { b: "y" });
-    }
-
-    // --------------------------------------------------
-    // Multiple overrides — applied left to right
-    // --------------------------------------------------
-
-    multipleOverridesAppliedLeftToRight()
-    {
-        const t = schema({
-            host: string(),
-            port: number(),
-            debug: boolean(),
-        });
-
-        const result = t.schemaAlignedAssign(
-            { host: "localhost", port: 8080, debug: false },
-            { port: 3000 },
-            { debug: true }
-        );
-
-        assert.deepStrictEqual(result, { host: "localhost", port: 3000, debug: true });
-    }
-
-    multipleOverridesLaterOneWinsOnConflict()
-    {
-        const t = schema({
-            host: string(),
-            port: number(),
-        });
-
-        const result = t.schemaAlignedAssign(
-            { host: "localhost", port: 8080 },
-            { port: 3000 },
-            { port: 9090 }
-        );
-
-        assert.deepStrictEqual(result, { host: "localhost", port: 9090 });
     }
 
     // --------------------------------------------------
@@ -2209,7 +2222,7 @@ export class SchemaAlignedAssignTests
             port: number(),
         });
 
-        const result = t.schemaAlignedAssign(
+        const result = t.patchOrOverride(
             { host: "localhost", port: 8080 },
             undefined as any
         );
@@ -2224,7 +2237,7 @@ export class SchemaAlignedAssignTests
             port: number(),
         });
 
-        const result = t.schemaAlignedAssign(
+        const result = t.patchOrOverride(
             { host: "localhost", port: 8080 },
             null as any
         );
@@ -2245,7 +2258,7 @@ export class SchemaAlignedAssignTests
         });
 
         // Base only provides `host`; port and debug should use defaults as base values
-        const result = t.schemaAlignedAssign(
+        const result = t.patchOrOverride(
             { host: "localhost" } as any,
             { debug: true }
         );
