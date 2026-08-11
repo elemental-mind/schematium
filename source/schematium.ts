@@ -1,2 +1,2 @@
-export type { TemplateObject, SchemaAPI, TemplateAPI, ValidationTolerances, ValidationSettings, InferSchemaType, ValidationAPI, ValidationResult, ValidationSuccessResult, RejectionResult, ParseResult, ParseSuccessResult } from "./templating.ts";
-export { array, arrayOf, record, recordOf, boolean, string, number, object, oneOf, schema, valueOf, ValidationIssue } from "./templating.ts";
+export type { TemplateObject, SchemaAPI, TemplateAPI, ValidationTolerances, ValidationSettings, InferSchemaType, ValidationAPI, ValidationResult, ValidationSuccessResult, RejectionResult, ParseResult, ParseSuccessResult } from "./api/templating.ts";
+export { array, arrayOf, record, recordOf, boolean, string, number, object, oneOf, schema, valueOf, ValidationIssue } from "./api/templating.ts";

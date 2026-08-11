@@ -40,6 +40,38 @@ export class BaseClassSubstitutionTests
         t.track();
         assert.ok(t.calls.includes("track"), "Base class method should be callable on the template");
     }
+
+    inferredCollectionEntriesShouldUseTheCurrentBaseClass()
+    {
+        class TrackingBase
+        {
+            static instanceCount = 0;
+            constructor() { TrackingBase.instanceCount++; }
+        }
+
+        const { array } = generateTemplatingAPI<TrackingBase>(TrackingBase);
+        array([1, 2]);
+
+        assert.strictEqual(TrackingBase.instanceCount, 2, "Both the collection and its inferred entry template should use the custom base class");
+    }
+
+    objectTemplateCachesShouldBeIsolatedByClassFamily()
+    {
+        class FirstBase { }
+        class SecondBase { }
+
+        const firstAPI = generateTemplatingAPI<FirstBase>(FirstBase);
+        const secondAPI = generateTemplatingAPI<SecondBase>(SecondBase);
+        const sharedShape = { kind: "sample" };
+        const firstTemplate = firstAPI.schema(sharedShape);
+        const cachedFirstTemplate = firstAPI.schema(sharedShape);
+        const secondTemplate = secondAPI.schema(sharedShape);
+
+        assert.strictEqual(firstTemplate, cachedFirstTemplate, "A class family should reuse its own cached object template");
+        assert.notStrictEqual(firstTemplate, secondTemplate, "Different class families should not share cached object templates");
+        assert.ok(firstTemplate instanceof FirstBase);
+        assert.ok(secondTemplate instanceof SecondBase);
+    }
 }
 
 export class DefinitionApiExtensionTests

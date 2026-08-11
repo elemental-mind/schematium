@@ -1,6 +1,6 @@
 import * as assert from "node:assert";
-import type { ParseResult, ParseSuccessResult, TemplateObject, ValidationAPI, ValidationSettings, ValidationSuccessResult, ValidationTolerances, ValueType } from "./templating.ts";
-import { generateTemplatingAPI, RejectionResult, ValidationIssue, ValidationResult } from "./templating.ts";
+import type { ParseResult, ParseSuccessResult, TemplateObject, ValidationAPI, ValidationSettings, ValidationSuccessResult, ValidationTolerances, ValueType } from "./api/templating.ts";
+import { generateTemplatingAPI, RejectionResult, ValidationIssue, ValidationResult } from "./api/templating.ts";
 import { Debug } from "unitium";
 
 function assertParseSuccess<T>(result: ParseResult<T>, expectedValue: T): void
