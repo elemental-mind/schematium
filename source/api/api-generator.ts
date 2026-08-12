@@ -81,7 +81,7 @@ function generateDefinitionAPI<GeneralExt = {}, SchemaExt = {}, PrimitiveExt = {
     return { schema, string, number, boolean, object, valueOf, oneOf, record, recordOf, array, arrayOf };
 }
 
-export function generateSchemaAPI<GeneralExt = {}, SchemaExt = {}, PrimitiveExt = {}, VariadicExt = {}, CollectionExt = {}>(BaseClass: new (...args: any[]) => any = Object)
+export function generateSchemaDefinitionAPI<GeneralExt = {}, SchemaExt = {}, PrimitiveExt = {}, VariadicExt = {}, CollectionExt = {}>(BaseClass: new (...args: any[]) => any = Object)
 {
     const registry = new TemplateRegistry(BaseClass);
     return generateDefinitionAPI<GeneralExt, SchemaExt, PrimitiveExt, VariadicExt, CollectionExt>(registry);

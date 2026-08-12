@@ -1,4 +1,3 @@
-import { OptionalityAPI } from "../schematium-extensible.ts";
 import type { ValueAPI } from "../template-classes/base.ts";
 import type { ValidationIssue } from "../validation/validation.ts";
 import type { SchemaAPI } from "./schema-interface.ts";
