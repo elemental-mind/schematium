@@ -1,4 +1,4 @@
-import type { ValidationSettings } from "../api/templating-contracts.ts";
+import type { ValidationSettings } from "../api/schema-interface.ts";
 
 export abstract class Validator
 {
