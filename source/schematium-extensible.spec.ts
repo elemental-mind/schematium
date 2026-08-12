@@ -1,6 +1,6 @@
 import { Debug } from "unitium";
 import * as assert from "node:assert";
-import { generateTemplatingAPI, ValueType } from "./schematium-extensible.ts";
+import { generateSchemaDefinitionAPI, ValueType } from "./schematium-extensible.ts";
 
 export class BaseClassSubstitutionTests
 {
@@ -12,7 +12,7 @@ export class BaseClassSubstitutionTests
             getBaseInfo() { return "base-info"; }
         }
 
-        const { schema, string } = generateTemplatingAPI<MyBase>(MyBase);
+        const { schema, string } = generateSchemaDefinitionAPI<MyBase>(MyBase);
         const t = schema({
             sample: string("default").required,
         });
@@ -30,7 +30,7 @@ export class BaseClassSubstitutionTests
             track() { this.calls.push("track"); return this; }
         }
 
-        const { schema, string } = generateTemplatingAPI<TrackingBase>(TrackingBase);
+        const { schema, string } = generateSchemaDefinitionAPI<TrackingBase>(TrackingBase);
         const t = schema({
             test: string("default")
         });
@@ -49,7 +49,7 @@ export class BaseClassSubstitutionTests
             constructor() { TrackingBase.instanceCount++; }
         }
 
-        const { array } = generateTemplatingAPI<TrackingBase>(TrackingBase);
+        const { array } = generateSchemaDefinitionAPI<TrackingBase>(TrackingBase);
         array([1, 2]);
 
         assert.strictEqual(TrackingBase.instanceCount, 2, "Both the collection and its inferred entry template should use the custom base class");
@@ -60,8 +60,8 @@ export class BaseClassSubstitutionTests
         class FirstBase { }
         class SecondBase { }
 
-        const firstAPI = generateTemplatingAPI<FirstBase>(FirstBase);
-        const secondAPI = generateTemplatingAPI<SecondBase>(SecondBase);
+        const firstAPI = generateSchemaDefinitionAPI<FirstBase>(FirstBase);
+        const secondAPI = generateSchemaDefinitionAPI<SecondBase>(SecondBase);
         const sharedShape = { kind: "sample" };
         const firstTemplate = firstAPI.schema(sharedShape);
         const cachedFirstTemplate = firstAPI.schema(sharedShape);
@@ -83,12 +83,12 @@ export class DefinitionApiExtensionTests
             tag(tag: string): this { return this; }
         }
 
-        const defaultAPI = generateTemplatingAPI();
+        const defaultAPI = generateSchemaDefinitionAPI();
         // @ts-expect-error - .tag() does not exist on the default TemplatingAPI
         assert.throws(() => defaultAPI.primitives.string().tag("foo"));
 
         // With the extension type applied, .tag() should be available at the type level
-        const { string } = generateTemplatingAPI<{}, {}, PrimitiveExtension>(PrimitiveExtension);
+        const { string } = generateSchemaDefinitionAPI<{}, {}, PrimitiveExtension>(PrimitiveExtension);
         string().optional.tag("foo");
         string().withDefault("whatever").tag("foo");
     }
@@ -105,7 +105,7 @@ export class DefinitionApiExtensionTests
             }
         }
 
-        const { number } = generateTemplatingAPI<{}, {}, Taggable>(Taggable);
+        const { number } = generateSchemaDefinitionAPI<{}, {}, Taggable>(Taggable);
         const result = number(42).tag("my-number");
 
         assert.strictEqual(result.tagValue, "my-number");
@@ -118,7 +118,7 @@ export class DefinitionApiExtensionTests
             typeDependentClosure(closure: (value: ValueType<this>) => boolean) { return this; };
         }
 
-        const { number, string, valueOf } = generateTemplatingAPI<{}, Extension, Extension, Extension>(Extension);
+        const { number, string, valueOf } = generateSchemaDefinitionAPI<{}, Extension, Extension, Extension>(Extension);
         number(42).typeDependentClosure(value => value === 100);
         //@ts-expect-error should throw because boolean =! number
         number(42).typeDependentClosure(value => value === false);
