@@ -1,4 +1,4 @@
-import type { TemplateObject, TypeOption } from "../../api/templating-contracts.ts";
+import type { TemplateObject, TypeOption } from "../../api/definition-interface.ts";
 import { MissingMember, TypeMismatch, UnknownMember, Validator } from "../../validation/validation.ts";
 import type { InternalValueTemplate, ValueTemplateConstructor } from "../base.ts";
 
@@ -12,18 +12,11 @@ export interface InternalObjectTemplate<T = any> extends InternalValueTemplate<T
 
 export interface ObjectTemplateConstructor
 {
+    new <T>(templateObject: TemplateObject): InternalObjectTemplate<T>;
     fromTemplateObject(templateObject: TemplateObject): InternalObjectTemplate<any>;
-}
+};
 
-export interface TypeInputResolver
-{
-    typeFromInput(typeOption: TypeOption): InternalValueTemplate<any>;
-}
-
-export function createObjectTemplate(
-    ValueTemplate: ValueTemplateConstructor,
-    typeInputResolver: TypeInputResolver,
-): ObjectTemplateConstructor
+export function createObjectTemplate(ValueTemplate: ValueTemplateConstructor): ObjectTemplateConstructor
 {
     class ObjectTemplate<T> extends ValueTemplate<T>
     {
@@ -43,7 +36,7 @@ export function createObjectTemplate(
         public hasNonCloneDefaultMembers: boolean = false;
         private membersWithDefaultValues: Map<string, InternalValueTemplate<any>> = new Map();
 
-        private constructor(templateObject: TemplateObject)
+        constructor(templateObject: TemplateObject)
         {
             super();
             ObjectTemplate.TemplateCache.set(templateObject, this);
@@ -51,9 +44,7 @@ export function createObjectTemplate(
 
             for (const [key, value] of Object.entries(templateObject))
             {
-                const subTemplate = value instanceof ValueTemplate
-                    ? value
-                    : typeInputResolver.typeFromInput(value as TypeOption);
+                const subTemplate = value instanceof ValueTemplate ? value : this.registry.convertTypeInputToTemplate(value as TypeOption);
 
                 this.keys.add(key);
                 this.entries.push([key, subTemplate]);

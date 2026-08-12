@@ -1,4 +1,5 @@
-import type { CheckAPI, DefaultsAPI, SchemaAPI, ValidationAPI, ValidationSettings, ValidationTolerances, valueType } from "../api/templating-contracts.ts";
+import type { CheckAPI, DefaultsAPI, ValidationAPI } from "../api/definition-interface.ts";
+import type { SchemaAPI, ValidationSettings, ValidationTolerances } from "../api/schema-interface.ts";
 import type { ParseResult, ValidationResult } from "../validation/validation.ts";
 import type { TemplateRegistry } from "./registry.ts";
 
@@ -6,8 +7,16 @@ import { ParseError, ParseSuccessResult, TypeMismatch, UndefinedValue, Validatio
 
 export type ValueTemplateConstructor = abstract new <T = any>() => InternalValueTemplate<T>;
 
+declare const containedType: unique symbol;
+export interface ValueAPI<T>
+{
+    [containedType]: T;
+};
+
 export interface InternalValueTemplate<T = any>
 {
+    registry: TemplateRegistry;
+
     matchingPriority: number;
     isOptional: boolean;
     hasDefaultValue: boolean;
@@ -29,9 +38,9 @@ export function createValueTemplate(BaseClass: new (...args: any[]) => any, regi
 {
     abstract class ValueTemplate<T> extends BaseClass implements SchemaAPI<T>, CheckAPI<T>, DefaultsAPI<T>
     {
-        declare resolveType: TemplateRegistry;
+        declare registry: TemplateRegistry;
 
-        declare [valueType]: T;
+        declare [containedType]: T;
 
         public readonly matchingPriority: number = 3;
         public isOptional = false;
@@ -167,7 +176,7 @@ export function createValueTemplate(BaseClass: new (...args: any[]) => any, regi
         }
     }
 
-    ValueTemplate.prototype.resolveType = registry;
+    ValueTemplate.prototype.registry = registry;
 
     return ValueTemplate;
 }

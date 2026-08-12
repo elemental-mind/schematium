@@ -1,18 +1,12 @@
-import type { LiteralType } from "../../api/templating-contracts.ts";
+import type { LiteralType } from "../../api/definition-interface.ts";
 import type { Validator } from "../../validation/validation.ts";
 import type { InternalValueTemplate, ValueTemplateConstructor } from "../base.ts";
-import type { PrimitiveTemplateFamily } from "./primitives.ts";
 
 import { TypeMismatch } from "../../validation/validation.ts";
 
 export type LiteralTemplateConstructor = new <T extends LiteralType>(value: T) => InternalValueTemplate<T>;
 
-export interface LiteralTemplateDependencies extends PrimitiveTemplateFamily
-{
-    typeFromExample(exampleValue: LiteralType): InternalValueTemplate<any>;
-}
-
-export function createLiteralTemplate(ValueTemplate: ValueTemplateConstructor, dependencies: LiteralTemplateDependencies): LiteralTemplateConstructor
+export function createLiteralTemplate(ValueTemplate: ValueTemplateConstructor): LiteralTemplateConstructor
 {
     class LiteralTemplate<T extends LiteralType> extends ValueTemplate<T>
     {
@@ -23,13 +17,10 @@ export function createLiteralTemplate(ValueTemplate: ValueTemplateConstructor, d
         {
             super();
             this.permittedValue = permittedValue;
-            this.permittedValueTemplate = dependencies.typeFromExample(permittedValue);
+            this.permittedValueTemplate = this.registry.inferTemplateFromValue(permittedValue);
 
-            const isPrimitiveTemplate = [
-                dependencies.NumberTemplate,
-                dependencies.StringTemplate,
-                dependencies.BooleanTemplate,
-            ].some(PrimitiveTemplate => this.permittedValueTemplate instanceof PrimitiveTemplate);
+            const isPrimitiveTemplate = [this.registry.NumberTemplate, this.registry.StringTemplate, this.registry.BooleanTemplate]
+                .some(PrimitiveTemplate => this.permittedValueTemplate instanceof PrimitiveTemplate);
 
             if (!isPrimitiveTemplate)
                 throw new Error("Only numbers, booleans or strings permitted as literal types");

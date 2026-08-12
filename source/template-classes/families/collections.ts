@@ -1,4 +1,4 @@
-import type { CollectionEntryType, ValidationAPI } from "../../api/templating-contracts.ts";
+import type { CollectionEntryType, ValidationAPI } from "../../api/definition-interface.ts";
 import type { Validator } from "../../validation/validation.ts";
 import type { InternalValueTemplate, ValueTemplateConstructor } from "../base.ts";
 
@@ -10,24 +10,10 @@ export interface InternalCollectionTemplate<T = any> extends InternalValueTempla
     acceptsEntries(validator: (key: string | number, value: CollectionEntryType<T>, validator: ValidationAPI) => void): this;
 }
 
-export type CollectionTemplateConstructor = abstract new <T>(
-    entryTemplate: InternalValueTemplate<any>
-) => InternalCollectionTemplate<T>;
-export type RecordTemplateConstructor = new <T>(
-    entryTemplate: InternalValueTemplate<any>
-) => InternalCollectionTemplate<Record<string, T>>;
-export type ArrayTemplateConstructor = new <T>(
-    entryTemplate: InternalValueTemplate<any>
-) => InternalCollectionTemplate<T[]>;
+export type RecordTemplateConstructor = new <T>(entryTemplate: InternalValueTemplate<any>) => InternalCollectionTemplate<Record<string, T>>;
+export type ArrayTemplateConstructor = new <T>(entryTemplate: InternalValueTemplate<any>) => InternalCollectionTemplate<T[]>;
 
-export interface CollectionTemplateFamily
-{
-    CollectionTemplate: CollectionTemplateConstructor;
-    RecordTemplate: RecordTemplateConstructor;
-    ArrayTemplate: ArrayTemplateConstructor;
-}
-
-export function createCollectionTemplates(ValueTemplate: ValueTemplateConstructor): CollectionTemplateFamily
+export function createCollectionTemplates(ValueTemplate: ValueTemplateConstructor): { RecordTemplate: RecordTemplateConstructor, ArrayTemplate: ArrayTemplateConstructor; }
 {
     abstract class CollectionTemplate<T> extends ValueTemplate<T>
     {
@@ -104,5 +90,5 @@ export function createCollectionTemplates(ValueTemplate: ValueTemplateConstructo
         }
     }
 
-    return { CollectionTemplate, RecordTemplate, ArrayTemplate };
+    return { RecordTemplate, ArrayTemplate };
 }

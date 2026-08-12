@@ -1,4 +1,4 @@
-import type { ValidationTolerances } from "../../api/templating-contracts.ts";
+import type { ValidationTolerances } from "../../api/schema-interface.ts";
 import { ParseError, UnknownValue, Validator } from "../../validation/validation.ts";
 import type { InternalValueTemplate, ValueTemplateConstructor } from "../base.ts";
 
