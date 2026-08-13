@@ -11,8 +11,16 @@
     "allowImportingTsExtensions": true,
     "sourceMap": false,
     "declaration": true,
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "rootDir": "./source",
     "outDir": "./distribution"
-  }
+  },
+  "include": [
+    "source/**/*.ts"
+  ],
+  "exclude": [
+    "source/**/*.spec.ts"
+  ]
 }
