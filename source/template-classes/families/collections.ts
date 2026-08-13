@@ -1,4 +1,5 @@
-import type { CollectionEntryType, ValidationAPI } from "../../api/definition-interface.ts";
+import type { ValidationAPI } from "../../api/definition-interface.ts";
+import type { InferCollectionEntryType } from "../../api/utility-types/inference.ts";
 import type { Validator } from "../../validation/validation.ts";
 import type { InternalValueTemplate, ValueTemplateConstructor } from "../base.ts";
 
@@ -6,8 +7,8 @@ import { TypeMismatch, ValidationIssue, } from "../../validation/validation.ts";
 
 export interface InternalCollectionTemplate<T = any> extends InternalValueTemplate<T>
 {
-    acceptsEntries(validator: (key: string | number, value: CollectionEntryType<T>) => boolean): this;
-    acceptsEntries(validator: (key: string | number, value: CollectionEntryType<T>, validator: ValidationAPI) => void): this;
+    acceptsEntries(validator: (key: string | number, value: InferCollectionEntryType<T>) => boolean): this;
+    acceptsEntries(validator: (key: string | number, value: InferCollectionEntryType<T>, validator: ValidationAPI) => void): this;
 }
 
 export type RecordTemplateConstructor = new <T>(entryTemplate: InternalValueTemplate<any>) => InternalCollectionTemplate<Record<string, T>>;
@@ -20,8 +21,8 @@ export function createCollectionTemplates(ValueTemplate: ValueTemplateConstructo
         readonly matchingPriority: number = 2;
         protected entryTemplate: InternalValueTemplate<any>;
         protected entryGuard?:
-            ((key: string | number, value: CollectionEntryType<T>) => boolean) |
-            ((key: string | number, value: CollectionEntryType<T>, validator: ValidationAPI) => void);
+            ((key: string | number, value: InferCollectionEntryType<T>) => boolean) |
+            ((key: string | number, value: InferCollectionEntryType<T>, validator: ValidationAPI) => void);
 
         constructor(entryTemplate: InternalValueTemplate<any>)
         {
@@ -29,8 +30,8 @@ export function createCollectionTemplates(ValueTemplate: ValueTemplateConstructo
             this.entryTemplate = entryTemplate;
         }
 
-        acceptsEntries(validator: (key: string | number, value: CollectionEntryType<T>) => boolean): this;
-        acceptsEntries(validator: (key: string | number, value: CollectionEntryType<T>, validator: ValidationAPI) => void): this;
+        acceptsEntries(validator: (key: string | number, value: InferCollectionEntryType<T>) => boolean): this;
+        acceptsEntries(validator: (key: string | number, value: InferCollectionEntryType<T>, validator: ValidationAPI) => void): this;
         acceptsEntries(validator: typeof this.entryGuard)
         {
             this.entryGuard = validator;
