@@ -1,11 +1,11 @@
 import * as assert from "node:assert";
-import { arrayOf, boolean, number, recordOf, schema, string, valueOf, RejectionResult, type ParseSuccessResult } from "../../tests/util/spec-support.ts";
+import { arrayOf, boolean, number, recordOf, validatorFor, string, valueOf, RejectionResult, type ParseSuccessResult } from "../../tests/util/spec-support.ts";
 
 export class ThoroughValidationTests
 {
     validateReturnsSuccessResultForValidValue()
     {
-        const t = schema({ name: string(), age: number() });
+        const t = validatorFor({ name: string(), age: number() });
         const result = t.validate({ name: "Alice", age: 30 }, { mode: "thorough" });
 
         assert.strictEqual(result.success, true);
@@ -13,7 +13,7 @@ export class ThoroughValidationTests
 
     validateReturnsRejectionResultForInvalidValue()
     {
-        const t = schema({ name: string(), age: number() });
+        const t = validatorFor({ name: string(), age: number() });
         const result = t.validate({ name: 42, age: "not-a-number" }, { mode: "thorough" });
 
         assert.strictEqual(result.success, false);
@@ -23,7 +23,7 @@ export class ThoroughValidationTests
 
     thoroughModeCollectsAllIssuesNotJustFirst()
     {
-        const t = schema({
+        const t = validatorFor({
             a: string(),
             b: number(),
             c: boolean(),
@@ -39,7 +39,7 @@ export class ThoroughValidationTests
 
     fastModeStopsAtFirstIssue()
     {
-        const t = schema({
+        const t = validatorFor({
             a: string(),
             b: number(),
             c: boolean(),
@@ -55,7 +55,7 @@ export class ThoroughValidationTests
 
     thoroughModeReportsMissingRequiredMembers()
     {
-        const t = schema({
+        const t = validatorFor({
             required: string(),
             optional: string("default"),
         });
@@ -69,7 +69,7 @@ export class ThoroughValidationTests
 
     thoroughModeReportsUnknownMembers()
     {
-        const t = schema({ known: string() });
+        const t = validatorFor({ known: string() });
 
         const result = t.validate({ known: "ok", unknown: "extra" }, { mode: "thorough" });
 
@@ -80,7 +80,7 @@ export class ThoroughValidationTests
 
     thoroughModeReportsTypeMismatch()
     {
-        const t = schema({ value: number() });
+        const t = validatorFor({ value: number() });
 
         const result = t.validate({ value: "not-a-number" }, { mode: "thorough" });
 
@@ -91,7 +91,7 @@ export class ThoroughValidationTests
 
     thoroughModeReportsUndefinedValue()
     {
-        const t = schema({ required: string() });
+        const t = validatorFor({ required: string() });
 
         const result = t.validate({ required: undefined }, { mode: "thorough" });
 
@@ -102,7 +102,7 @@ export class ThoroughValidationTests
 
     validateDefaultsToFastMode()
     {
-        const t = schema({ a: string(), b: number() });
+        const t = validatorFor({ a: string(), b: number() });
 
         // Without mode specified, defaults to fastNoIssueReport
         const result = t.validate({ a: 123, b: "wrong" });
@@ -117,7 +117,7 @@ export class ValidationIssueTests
 {
     issueHasKindDerivedFromClassName()
     {
-        const t = schema({ value: number() });
+        const t = validatorFor({ value: number() });
         const result = t.validate({ value: "wrong" }, { mode: "thorough" }) as RejectionResult;
 
         assert.strictEqual(result.issues.length > 0, true, "expected at least one issue");
@@ -129,7 +129,7 @@ export class PathTracingTests
 {
     nestedObjectReportsPath()
     {
-        const t = schema({
+        const t = validatorFor({
             nested: {
                 value: number(),
             },
@@ -145,7 +145,7 @@ export class PathTracingTests
 
     deeplyNestedObjectReportsFullPath()
     {
-        const t = schema({
+        const t = validatorFor({
             level1: {
                 level2: {
                     level3: {
@@ -165,7 +165,7 @@ export class PathTracingTests
 
     missingMemberReportsPath()
     {
-        const t = schema({
+        const t = validatorFor({
             nested: {
                 required: number(),
             },
@@ -181,7 +181,7 @@ export class PathTracingTests
 
     arrayEntryReportsPath()
     {
-        const t = schema({
+        const t = validatorFor({
             items: arrayOf(number),
         });
 
@@ -195,7 +195,7 @@ export class PathTracingTests
 
     recordEntryReportsPath()
     {
-        const t = schema({
+        const t = validatorFor({
             data: recordOf(number),
         });
 
@@ -209,7 +209,7 @@ export class PathTracingTests
 
     multipleIssuesCollectAllPaths()
     {
-        const t = schema({
+        const t = validatorFor({
             nested: {
                 a: string(),
                 b: number(),
@@ -268,7 +268,7 @@ export class ParseResultIssueTests
 
     parseStringObjectInvalidJsonReportsParseError()
     {
-        const t = schema({ name: string() });
+        const t = validatorFor({ name: string() });
         const result = t.parseString("{invalid json", { mode: "thorough" }) as RejectionResult;
 
         assert.strictEqual(result.success, false);
@@ -277,7 +277,7 @@ export class ParseResultIssueTests
 
     parseStringObjectWithInvalidMemberReportsTypeMismatch()
     {
-        const t = schema({ count: number() });
+        const t = validatorFor({ count: number() });
         const result = t.parseString('{"count":"not-a-number"}', { mode: "thorough" }) as RejectionResult;
 
         assert.strictEqual(result.success, false);
@@ -288,7 +288,7 @@ export class ParseResultIssueTests
 
     parseStringThoroughModeCollectsAllIssues()
     {
-        const t = schema({ a: number(), b: boolean() });
+        const t = validatorFor({ a: number(), b: boolean() });
         const result = t.parseString('{"a":"wrong","b":"also-wrong"}', { mode: "thorough" }) as RejectionResult;
 
         assert.strictEqual(result.success, false);

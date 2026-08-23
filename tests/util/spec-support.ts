@@ -4,9 +4,9 @@ export type { ParseResult, ParseSuccessResult, TemplateObject, ValidationAPI, Va
 export { RejectionResult, ValidationIssue, ValidationResult } from "../../source/schematium-extensible.ts";
 
 import type { ParseResult, ParseSuccessResult, TemplateObject, ValidationSettings, ValidationTolerances, ValueType, } from "../../source/schematium-extensible.ts";
-import { generateSchemaDefinitionAPI, ValidationResult, } from "../../source/schematium-extensible.ts";
+import { generateTemplateAPI, ValidationResult, } from "../../source/schematium-extensible.ts";
 
-interface TestSchemaAPI
+interface TestValidatorAPI
 {
     isOptional: boolean;
     check(value: unknown, settings?: ValidationTolerances): value is ValueType<this>;
@@ -17,7 +17,7 @@ interface TestSchemaAPI
 }
 
 export const {
-    schema,
+    validatorFor,
     string,
     number,
     boolean,
@@ -28,7 +28,7 @@ export const {
     recordOf,
     array,
     arrayOf,
-} = generateSchemaDefinitionAPI<TestSchemaAPI>();
+} = generateTemplateAPI<{ definitionExtensions: { general: TestValidatorAPI; }; }>();
 
 
 export function assertParseSuccess<T>(result: ParseResult<T>, expectedValue: T): void

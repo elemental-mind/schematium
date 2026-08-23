@@ -1,7 +1,6 @@
 import type { ValueAPI } from "../template-classes/base.ts";
 import type { ValidationIssue } from "../validation/validation.ts";
-import type { SchemaAPI } from "./schema-interface.ts";
-import type { InferCollectionEntryType } from "./utility-types/inference.ts";
+import type { InferCollectionEntryType, InferSchemaType } from "./utility-types/inference.ts";
 import type { ForceRequired, SetRequired } from "./utility-types/optionality.ts";
 
 export interface TemplateObject
@@ -9,7 +8,7 @@ export interface TemplateObject
     [key: string]: TemplateObject | LiteralType | ValueAPI<any>;
 }
 
-export type TypeOption = PrimitiveType | TemplateObject | SchemaAPI<any> | LiteralType;
+export type TypeOption = PrimitiveType | TemplateObject | ValueAPI<any> | LiteralType;
 export type PrimitiveType = (() => ValueAPI<string>) | (() => ValueAPI<number>) | (() => ValueAPI<boolean>);
 export type LiteralType = number | string;
 
@@ -17,6 +16,12 @@ export type DefinitionAPI<T> =
     OptionalityAPI<T> &
     DefaultsAPI<T> &
     CheckAPI<T>;
+
+declare const objectDefinition: unique symbol;
+export interface ObjectDefinitionAPI<T extends TemplateObject> extends DefinitionAPI<InferSchemaType<T>>
+{
+    [objectDefinition]: T;
+}
 
 export interface CollectionDefinitionAPI<T> extends DefinitionAPI<T>
 {

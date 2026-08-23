@@ -8,7 +8,7 @@ import
     object,
     recordOf,
     RejectionResult,
-    schema,
+    validatorFor,
     string,
     valueOf,
     type TemplateObject,
@@ -38,7 +38,7 @@ export class ObjectDefinitionTests
 
     allowPartialLetsMissingRequiredMembersPass()
     {
-        const t = schema({
+        const t = validatorFor({
             required: string(),
             optional: string("default"),
         });
@@ -52,7 +52,7 @@ export class ObjectDefinitionTests
 
     allowUnknownsLetsExtraMembersPass()
     {
-        const t = schema({
+        const t = validatorFor({
             known: string(),
         });
 
@@ -65,7 +65,7 @@ export class ObjectDefinitionTests
 
     allowPartialAndAllowUnknownsWorkTogether()
     {
-        const t = schema({
+        const t = validatorFor({
             required: number(),
         });
 
@@ -76,7 +76,7 @@ export class ObjectDefinitionTests
 
     allowPartialWithOptionalMembersStillWorks()
     {
-        const t = schema({
+        const t = validatorFor({
             required: string(),
             optional: number(42),
         });
@@ -89,7 +89,7 @@ export class ObjectDefinitionTests
 
     allowPartialPropagatesToNestedObjects()
     {
-        const t = schema({
+        const t = validatorFor({
             nested: {
                 innerRequired: number(),
             },
@@ -102,7 +102,7 @@ export class ObjectDefinitionTests
 
     allowUnknownsPropagatesToNestedObjects()
     {
-        const t = schema({
+        const t = validatorFor({
             nested: {
                 a: string(),
             },
@@ -115,7 +115,7 @@ export class ObjectDefinitionTests
 
     allowPartialDoesNotSkipTypeCheckForPresentMembers()
     {
-        const t = schema({
+        const t = validatorFor({
             name: string(),
             count: number(),
         });
@@ -127,7 +127,7 @@ export class ObjectDefinitionTests
 
     allowUnknownsDoesNotSkipTypeCheckForKnownMembers()
     {
-        const t = schema({
+        const t = validatorFor({
             name: string(),
         });
 
@@ -138,7 +138,7 @@ export class ObjectDefinitionTests
 
     bothFlagsDoNotMaskTypeMismatchOnRequiredFields()
     {
-        const t = schema({
+        const t = validatorFor({
             required: number(),
             optional: string("default"),
         });
@@ -150,7 +150,7 @@ export class ObjectDefinitionTests
 
     bothFlagsDoNotMaskTypeMismatchInNestedObjects()
     {
-        const t = schema({
+        const t = validatorFor({
             nested: {
                 value: number(),
             },
@@ -163,7 +163,7 @@ export class ObjectDefinitionTests
 
     bothFlagsDoNotMaskTypeMismatchInLists()
     {
-        const t = schema({
+        const t = validatorFor({
             items: recordOf(number),
         });
 
@@ -174,7 +174,7 @@ export class ObjectDefinitionTests
 
     bothFlagsDoNotMaskTypeMismatchInArrays()
     {
-        const t = schema({
+        const t = validatorFor({
             items: arrayOf(number),
         });
 
@@ -185,7 +185,7 @@ export class ObjectDefinitionTests
 
     allowPartialKeepsCustomValidatorActive()
     {
-        const t = schema({
+        const t = validatorFor({
             value: number().accepts((v: number) => v > 0),
         });
 
@@ -198,7 +198,7 @@ export class ObjectDefinitionTests
 
     validatesValidConcreteObject()
     {
-        const t = schema(SampleTemplate);
+        const t = validatorFor(SampleTemplate);
 
 
         const validObject = {
@@ -216,7 +216,7 @@ export class ObjectDefinitionTests
 
     optionalFieldsDontRequireValue()
     {
-        const t = schema(SampleTemplate);
+        const t = validatorFor(SampleTemplate);
 
 
         // All required fields present; optional fields (array, list, deep) omitted
@@ -232,7 +232,7 @@ export class ObjectDefinitionTests
 
     requiredFieldsRejectUndefined()
     {
-        const t = schema(SampleTemplate);
+        const t = validatorFor(SampleTemplate);
 
 
         const base = {
@@ -264,7 +264,7 @@ export class ObjectDefinitionTests
             }
         } satisfies TemplateObject;
 
-        const t = schema(TemplateWithOptionalNested);
+        const t = validatorFor(TemplateWithOptionalNested);
 
 
         // All members of nested are optional (due to defaults), so nested itself is optional

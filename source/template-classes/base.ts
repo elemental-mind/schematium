@@ -1,5 +1,5 @@
 import type { CheckAPI, DefaultsAPI, ValidationAPI } from "../api/definition-interface.ts";
-import type { SchemaAPI, ValidationSettings, ValidationTolerances } from "../api/schema-interface.ts";
+import type { ObjectValidatorAPI, ValidationSettings, ValidationTolerances, ValidatorAPI, ValidatorEntries } from "../api/validator-interface.ts";
 import type { ParseResult, ValidationResult } from "../validation/validation.ts";
 import type { TemplateRegistry } from "./registry.ts";
 
@@ -36,7 +36,7 @@ export interface InternalValueTemplate<T = any>
 /** Creates the common base for one registry's mutually-compatible template family. */
 export function createValueTemplate(BaseClass: new (...args: any[]) => any, registry: TemplateRegistry): ValueTemplateConstructor
 {
-    abstract class ValueTemplate<T> extends BaseClass implements SchemaAPI<T>, CheckAPI<T>, DefaultsAPI<T>
+    abstract class ValueTemplate<T> extends BaseClass implements ValidatorAPI<T>, CheckAPI<T>, DefaultsAPI<T>
     {
         declare registry: TemplateRegistry;
 
@@ -65,6 +65,11 @@ export function createValueTemplate(BaseClass: new (...args: any[]) => any, regi
             return this.default !== undefined;
         }
 
+        isObject(): this is this & ObjectValidatorAPI<NonNullable<T> & object, ValidatorEntries>
+        {
+            return false;
+        }
+
         protected get typeLabel(): string
         {
             return this.constructor.name.replace(/Template$/, '').toLowerCase();
@@ -86,11 +91,11 @@ export function createValueTemplate(BaseClass: new (...args: any[]) => any, regi
             return this;
         }
 
-        parseString<Parsed>(value: string, settings: ValidationSettings = Validator.DefaultSettings): ParseResult<Parsed>
+        parseString(value: string, settings: ValidationSettings = Validator.DefaultSettings): ParseResult<T>
         {
             const validator = Validator.withSettings(settings);
             const resultValue = this.parseWithValidation(value, validator);
-            const parsed = validator.result.success ? new ParseSuccessResult<Parsed>(resultValue as Parsed) : validator.result;
+            const parsed = validator.result.success ? new ParseSuccessResult<T>(resultValue as T) : validator.result;
             validator.release();
             return parsed;
         }

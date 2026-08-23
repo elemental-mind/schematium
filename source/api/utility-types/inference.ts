@@ -14,6 +14,7 @@ export type InferSchemaType<T extends TemplateObject> =
 
 export type InferTypeDefinitionType<T extends TypeOption> =
     T extends (...args: any[]) => ValueAPI<infer Value> ? Value :
+    T extends ValueAPI<infer Value> ? Value :
     T extends number | string ? T :
     T extends TemplateObject ? InferSchemaType<T> :
     never;

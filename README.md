@@ -13,7 +13,7 @@ against that shape with full type inference.
 See this example:
 
 ```ts
-const template = schema({
+const template = validatorFor({
   name: string("anonymous"), // optional, due to default value "anonymous"
   age: number().accepts((n) => n >= 0), // required, as no default provided
   role: oneOf("admin", "user"),
@@ -36,7 +36,7 @@ template.validate(
 
 ## Why Schematium?
 
-- **End-to-end type safety** — `schema({...})` produces a value type you can use
+- **End-to-end type safety** — `validatorFor({...})` produces a value type you can use
   in function signatures, with optional vs. required fields tracked
   automatically.
 - **Fluent, declarative API** — chain `.required`, `.optional`, `.accepts(...)`,
@@ -46,7 +46,7 @@ template.validate(
   path-traced `ValidationIssue`s using `{ mode: "thorough" }`.
 - **Zero dependencies** at runtime.
 - **Extensible** — bring your own base class / decorator chain via
-  `generateSchemaDefinitionAPI(BaseClass)`.
+  `generateTemplateAPI(BaseClass)`.
 
 ## Quick start
 
@@ -69,7 +69,7 @@ import {
   oneOf,
   record,
   recordOf, // collections
-  schema, // the main validation/parsing API function
+  validatorFor, // the main validation/parsing API function
   string,
   valueOf, // variadics
 } from "schematium";
@@ -80,7 +80,7 @@ const PostTemplate = {
   content: string(),
 };
 
-const UserConfig = schema({
+const UserConfig = validatorFor({
   name: string("anonymous"), // optional (has default)
   age: number().accepts((n) => n >= 0), // required
   role: oneOf("admin", "user"), // required
@@ -116,7 +116,7 @@ const newUserWithDefaults = UserConfig.patchOrOverride({}, userInput);
 
 ## Concepts
 
-### Definition API vs. Schema API
+### Definition API vs. Validator API
 
 Every template in Schematium is backed by a single class, which exposes **two
 complementary interfaces**:
@@ -125,10 +125,18 @@ complementary interfaces**:
   _constructing_ a template (`string()`, `number().required`,
   `arrayOf(...).withDefault([])`, `accepts(...)`, etc.). It lives on the value
   returned by the primitive, variadic, and collection factory functions.
-- **Schema API** — the operational surface you use while _consuming_ a template
+- **Validator API** — the operational surface you use while _consuming_ a template
   (`.check(value)`, `.validate(value, settings)`,
-  `.parseString(text, settings)`, `.getDefault()`). It is only exposed once an
-  entire object schema is wrapped by `schema(...)`.
+  `.parseString(text, settings)`, `.getDefault()`). Call `validatorFor(...)`
+  with either an object template or an existing value definition to expose it.
+
+```ts
+const PortValidator = validatorFor(
+  number().accepts((port) => port > 0 && port <= 65_535),
+);
+
+PortValidator.check(8080); // → true
+```
 
 ### Type References & Inference
 
@@ -163,7 +171,7 @@ members are filled from schema defaults where available.
   in the definition phase, Schematium will always inject a reference to this
   passed default in the tree produced by `.getDefault()`, instead of a clone.
 - **Objects synthesize member defaults.** When `object({...})` or
-  `schema({...})` has members with defaults, `.getDefault()` assembles a fresh
+  `validatorFor({...})` has members with defaults, `.getDefault()` assembles a fresh
   object containing those members. An explicit `.withDefault({...})`
   defines/overrides that synthesized value.
 
@@ -186,13 +194,41 @@ members are filled from schema defaults where available.
 
 ## Validation
 
-Schematium exposes three runtime entry points on every `schema(...)` template:
+Schematium exposes three runtime entry points on every `validatorFor(...)` template:
 
 | Method                                  | Returns                           | Use when                                                           |
 | --------------------------------------- | --------------------------------- | ------------------------------------------------------------------ |
 | `template.check(value, tolerances?)`    | `value is T` (boolean type guard) | You want a fast boolean decision                                   |
 | `template.validate(value, settings?)`   | `ValidationResult`                | You want every issue, with path traces, using `{mode: "thorough"}` |
 | `template.parseString(text, settings?)` | `ParseResult<T>`                  | Input arrives as a raw string                                      |
+
+### Traversing object validators
+
+Object validators expose their member validators through a readonly `entries`
+record. The record retains the original template keys and each member's inferred
+value type:
+
+```ts
+const ConfigValidator = validatorFor({
+  server: {
+    port: number(),
+  },
+});
+
+const ServerValidator = ConfigValidator.entries.server;
+const PortValidator = ServerValidator.entries.port;
+
+PortValidator.check(8080); // → true
+```
+
+Use `isObject()` when the specific validator kind is not statically known. It
+is a type predicate, so a successful check exposes `entries`:
+
+```ts
+if (someValidator.isObject()) {
+  Object.keys(someValidator.entries);
+}
+```
 
 ### Validation modes
 
@@ -265,7 +301,7 @@ Every value template supports these chainable modifiers:
 - `.acceptsEntries((key, value, validator) => void)` — entry-level validator
   with issue reporting.
 
-### Schema API
+### Validator API
 
 - `template.check(value, tolerances?)` — type-guard; returns `value is T`.
 - `template.validate(value, settings?)` — returns `ValidationResult`
@@ -304,12 +340,12 @@ String and number values can be used directly as exact-value constraints where a
 type descriptor would be expected, like in schemas and type-based collections:
 
 ```ts
-const TypedSchema = schema({
+const TypedValidator = validatorFor({
   kind: string(),
   version: number(),
 });
 
-const AllLiteralsSchema = schema({
+const AllLiteralsValidator = validatorFor({
   kind: "created",
   version: 1,
 }); //only accepts {kind: "created", version: 1}
@@ -343,7 +379,7 @@ const LiteralArray = arrayOf("read", "write", "delete"); //equivalent to
 ### Validating a nested config
 
 ```ts
-const Config = schema({
+const Config = validatorFor({
   server: {
     host: string("localhost"),
     port: number(8080).required.accepts((p) => p > 0 && p < 65536),
@@ -376,9 +412,9 @@ if (!result.success) {
 ### Parsing JSON input
 
 ```ts
-import { number, oneOf, schema, valueOf } from "schematium";
+import { number, oneOf, validatorFor, valueOf } from "schematium";
 
-const CliArguments = schema({
+const CliArguments = validatorFor({
   mode: oneOf("dev", "prod"),
   port: number(),
 });
@@ -390,7 +426,7 @@ CliArguments.parseString('{"mode":"dev","port":3000}');
 ### Records with arbitrary keys
 
 ```ts
-const ProfilesConfig = schema({
+const ProfilesConfig = validatorFor({
   profiles: recordOf(string)
     .withDefault({})
     .acceptsEntries((key, value) => typeof key === "string" && key.length > 0),
@@ -402,13 +438,13 @@ ProfilesConfig.check({ profiles: { alice: "admin", bob: "user" } }); // → true
 ## Extending the API
 
 `schematium` ships a default API instance, but you can create a separate,
-customized API with `generateSchemaDefinitionAPI(BaseClass?)`. The extension
+customized API with `generateTemplateAPI(BaseClass?)`. The extension
 entry point is `schematium/extensible`:
 
 ```ts
 // Value imports
 import {
-  generateSchemaDefinitionAPI, // Customized API surface generator
+  generateTemplateAPI, // Customized API surface generator
   ValidationIssue, // issue class (for typed rejectWith)
 } from "schematium/extensible";
 
@@ -416,7 +452,7 @@ import {
 import type {
   CollectionDefinitionAPI, // fluent API for arrays and records
   DefinitionAPI, // shape/type of a fluent definition chain
-  SchemaAPI, // shape/type of a fully-built schema(...)
+  ValidatorAPI, // shape/type of a fully-built validatorFor(...)
   ValidationAPI, // shape of the validator callback API
   ValidationResult, // success / rejection union
   ValidationSettings, // per-call settings (tolerances + mode)
@@ -425,16 +461,23 @@ import type {
 } from "schematium/extensible";
 ```
 
-`generateSchemaDefinitionAPI` is parameterized over five extension slots:
+`generateTemplateAPI` accepts one structured extension type. Every member is
+optional and omitted extension positions default to `{}`:
 
 ```ts
-generateSchemaDefinitionAPI<
-  GeneralExt = {}, // mixed into every template class
-  SchemaExt = {}, // mixed into the Schema API returned by schema(...)
-  PrimitiveExt = {}, // mixed into string/number/boolean/object definitions
-  VariadicExt = {}, // mixed into valueOf/oneOf definitions
-  CollectionExt = {} // mixed into record/array definitions
->;
+generateTemplateAPI<{
+  definitionExtensions: {
+    general: GeneralDefinitionExtension;
+    primitive: PrimitiveDefinitionExtension;
+    object: ObjectDefinitionExtension;
+    variadic: VariadicDefinitionExtension;
+    collection: CollectionDefinitionExtension;
+  };
+  validationExtensions: {
+    general: GeneralValidationExtension;
+    object: ObjectValidationExtension;
+  };
+}>;
 ```
 
 ### Substituting the base class
@@ -451,10 +494,12 @@ class MyBase {
   }
 }
 
-// Use MyBase as GeneralExt so its members are visible on every generated API.
-const { schema, string } = generateSchemaDefinitionAPI<MyBase>(MyBase);
+// Expose MyBase on validators as well as installing it at runtime.
+const { validatorFor, string } = generateTemplateAPI<{
+  validationExtensions: { general: MyBase };
+}>(MyBase);
 
-const t = schema({
+const t = validatorFor({
   sample: string("default").required,
 });
 
@@ -462,9 +507,9 @@ t.metadata; // "custom-base"
 t.getBaseInfo(); // "base-info"
 ```
 
-If you only need runtime base-class behavior, omit the generic argument. Supply
-the base class as `GeneralExt` too when its members should be visible to
-TypeScript:
+If you only need runtime base-class behavior, omit the generic argument. Add it
+to the relevant structured extension positions when its members should also be
+visible to TypeScript:
 
 ```ts
 class TrackingBase {
@@ -474,8 +519,8 @@ class TrackingBase {
   }
 }
 
-const { schema, boolean } = generateSchemaDefinitionAPI(TrackingBase);
-const runtimeTemplate = schema({ enabled: boolean() });
+const { validatorFor, boolean } = generateTemplateAPI(TrackingBase);
+const runtimeTemplate = validatorFor({ enabled: boolean() });
 // runtimeTemplate instanceof TrackingBase
 ```
 
@@ -487,7 +532,7 @@ fluent API, then pass it as the appropriate generic slot. The methods can return
 `.accepts(...)`, `.withDefault(...)`, `.acceptsEntries(...)`).
 
 ```ts
-import { generateSchemaDefinitionAPI } from "schematium/extensible";
+import { generateTemplateAPI } from "schematium/extensible";
 
 class Taggable {
   public tagValue?: string;
@@ -498,13 +543,39 @@ class Taggable {
 }
 
 // Apply the extension to primitive definitions.
-const { schema, number } = generateSchemaDefinitionAPI<{}, {}, Taggable>(
-  Taggable,
-);
+const { validatorFor, number } = generateTemplateAPI<{
+  definitionExtensions: { primitive: Taggable };
+}>(Taggable);
 
 const n = number(42).tag("my-number");
 n.tagValue; // "my-number"
-schema({ n }).check({ n: 7 }); // built-in schema API is preserved
+validatorFor({ n }).check({ n: 7 }); // built-in validator API is preserved
+```
+
+Validation extensions are exposed only after `validatorFor(...)` performs the
+Definition-to-Validator API transition. Object-specific validation extensions
+are also available on statically known object entries and after `isObject()`
+narrows a general validator:
+
+```ts
+class ValidationExtension {
+  traceValidation(): this {
+    return this;
+  }
+  inspectEntries(): this {
+    return this;
+  }
+}
+
+const { number, validatorFor } = generateTemplateAPI<{
+  validationExtensions: {
+    general: Pick<ValidationExtension, "traceValidation">;
+    object: Pick<ValidationExtension, "inspectEntries">;
+  };
+}>(ValidationExtension);
+
+validatorFor(number()).traceValidation();
+validatorFor({ value: number() }).inspectEntries();
 ```
 
 ### Writing definition methods that see the value's type
@@ -516,7 +587,7 @@ any definition-API surface, including variadics, so the same extension works on
 
 ```ts
 import {
-  generateSchemaDefinitionAPI,
+  generateTemplateAPI,
   type ValueType,
 } from "schematium/extensible";
 
@@ -526,14 +597,10 @@ class Extension {
   }
 }
 
-// Apply the extension to Schema, primitive, variadic, and collection APIs.
-const { number, string, valueOf } = generateSchemaDefinitionAPI<
-  {},
-  Extension,
-  Extension,
-  Extension,
-  Extension
->(Extension);
+// Apply the extension to every definition family.
+const { number, string, valueOf } = generateTemplateAPI<{
+  definitionExtensions: { general: Extension };
+}>(Extension);
 
 number(42)
   .typeDependentClosure((value: number) => true); // ok

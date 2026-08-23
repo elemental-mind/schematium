@@ -1,9 +1,10 @@
 // Factory for creating custom API instances with BaseClass injection into the class hierarchy
-export { generateSchemaDefinitionAPI } from "./api/api-generator.ts";
+export { generateTemplateAPI } from "./api/api-generator.ts";
+export type { ObjectValidatorFor, TemplateAPIExtensions, ValidatorEntriesFor, ValidatorFor } from "./api/api-generator.ts";
 
 // API interfaces for implementing custom fluent definition chains
 export * from "./api/definition-interface.ts";
-export * from "./api/schema-interface.ts";
+export * from "./api/validator-interface.ts";
 
 export * from "./api/utility-types/inference.ts";
 export * from "./api/utility-types/optionality.ts";

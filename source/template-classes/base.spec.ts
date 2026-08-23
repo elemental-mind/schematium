@@ -9,7 +9,7 @@ import
     record,
     recordOf,
     RejectionResult,
-    schema,
+    validatorFor,
     string,
     ValidationIssue,
     valueOf,
@@ -20,10 +20,10 @@ export class DefaultValueTests
 {
     objectDerivesDefaultFromChildren()
     {
-        const t = schema({
+        const t = validatorFor({
             name: string("Alice"),
             age: number(30),
-            role: string(), // required â€” no default, not marked optional
+            role: string(), // required no default, not marked optional
         });
 
         assert.deepStrictEqual(t.getDefault(), { name: "Alice", age: 30 });
@@ -31,7 +31,7 @@ export class DefaultValueTests
 
     objectAllChildrenOptionalWithDefaults()
     {
-        const t = schema({
+        const t = validatorFor({
             x: number(10),
             y: number(20),
         });
@@ -43,7 +43,7 @@ export class DefaultValueTests
 
     objectNoChildrenWithDefault()
     {
-        const t = schema({
+        const t = validatorFor({
             a: string(),
             b: number(),
         });
@@ -53,7 +53,7 @@ export class DefaultValueTests
 
     objectSingleChildWithDefault()
     {
-        const t = schema({
+        const t = validatorFor({
             label: string("fallback"),
             value: number(),
         });
@@ -67,7 +67,7 @@ export class DefaultValueTests
 
     nestedObjectDerivesDefaultsRecursively()
     {
-        const t = schema({
+        const t = validatorFor({
             config: {
                 host: string("localhost"),
                 port: number(8080),
@@ -81,20 +81,20 @@ export class DefaultValueTests
 
     nestedObjectSomeDefaults()
     {
-        const t = schema({
+        const t = validatorFor({
             outer: {
                 inner1: string("default"),
-                inner2: number(), // required â€” no default
+                inner2: number(), // required no default
             },
         });
 
-        // Only inner1 has a default â†’ outer's default is { inner1: "default" }
+        // Only inner1 has a default outer's default is { inner1: "default" }
         assert.deepStrictEqual(t.getDefault(), { outer: { inner1: "default" } });
     }
 
     deepNestedObjectNoDefaults()
     {
-        const t = schema({
+        const t = validatorFor({
             level1: {
                 level2: {
                     value: string()
@@ -107,7 +107,7 @@ export class DefaultValueTests
 
     deepNestedObjectWithDefaults()
     {
-        const t = schema({
+        const t = validatorFor({
             level1: {
                 level2: {
                     level3: {
@@ -157,7 +157,7 @@ export class DefaultValueTests
 }
 
 // ============================================================
-// getDefault â€” clone control via cloneDefaultOnAssignment
+// getDefault clone control via cloneDefaultOnAssignment
 // ============================================================
 
 export class DefaultCloneTests
@@ -220,7 +220,7 @@ export class DefaultCloneTests
 
     objectWithoutExplicitDefaultReturnsClone()
     {
-        const t = schema({
+        const t = validatorFor({
             items: array([1, 2, 3]),
             label: string("test"),
         });
@@ -235,7 +235,7 @@ export class DefaultCloneTests
     objectWithCloneDisabledMemberReturnsMemberDefaultReference()
     {
         const defaults = [1, 2, 3];
-        const t = schema({
+        const t = validatorFor({
             items: array(defaults, false),
             label: string("test"),
         });
@@ -246,7 +246,7 @@ export class DefaultCloneTests
     nestedObjectWithSomeNonCloneMembers()
     {
         const sharedArray = [1, 2, 3];
-        const t = schema({
+        const t = validatorFor({
             outer: object({
                 cloned: array([4, 5, 6]),
                 shared: array(sharedArray, false),
@@ -465,7 +465,7 @@ export class SchemaAlignedAssignTests
 
     mergesPartialOverrideIntoBaseObject()
     {
-        const t = schema({
+        const t = validatorFor({
             host: string(),
             port: number(),
         });
@@ -480,7 +480,7 @@ export class SchemaAlignedAssignTests
 
     overrideReplacesAllKeysWhenAllProvided()
     {
-        const t = schema({
+        const t = validatorFor({
             host: string(),
             port: number(),
         });
@@ -495,7 +495,7 @@ export class SchemaAlignedAssignTests
 
     rejectsOverrideKeysNotDefinedInSchema()
     {
-        const t = schema({
+        const t = validatorFor({
             host: string(),
             port: number(),
         });
@@ -508,7 +508,7 @@ export class SchemaAlignedAssignTests
 
     emptyOverrideReturnsBaseUnchanged()
     {
-        const t = schema({
+        const t = validatorFor({
             host: string(),
             port: number(),
         });
@@ -522,7 +522,7 @@ export class SchemaAlignedAssignTests
     }
 
     // --------------------------------------------------
-    // Variadic with two object shapes â€” variant switching
+    // Variadic with two object shapes variant switching
     // --------------------------------------------------
 
     variadicReplacesEntirelyWhenOverrideTargetsDifferentShape()
@@ -537,7 +537,7 @@ export class SchemaAlignedAssignTests
             { type: "y", label: "something", enabled: false }
         );
 
-        // Override targets a different shape â†’ full replace, no key leakage from base
+        // Override targets a different shape full replace, no key leakage from base
         assert.deepStrictEqual(result, { type: "y", label: "something", enabled: false });
     }
 
@@ -553,7 +553,7 @@ export class SchemaAlignedAssignTests
             { type: "x", value: 456 }
         );
 
-        // Same shape â†’ merge
+        // Same shape merge
         assert.deepStrictEqual(result, { type: "x", value: 456 });
     }
 
@@ -569,7 +569,7 @@ export class SchemaAlignedAssignTests
             { value: 456 }
         );
 
-        // Same shape, partial override â†’ merge preserving non-overridden keys from base
+        // Same shape, partial override merge preserving non-overridden keys from base
         assert.deepStrictEqual(result, { type: "x", value: 456, extra: "keep-me" });
     }
 
@@ -585,7 +585,7 @@ export class SchemaAlignedAssignTests
             { type: "y", label: "new", enabled: true }
         );
 
-        // Full replace to Shape B â€” `value` from Shape A must not leak through
+        // Full replace to Shape B `value` from Shape A must not leak through
         assert.deepStrictEqual(result, { type: "y", label: "new", enabled: true });
     }
 
@@ -608,7 +608,7 @@ export class SchemaAlignedAssignTests
 
     nestedObjectMergesRecursively()
     {
-        const t = schema({
+        const t = validatorFor({
             name: string(),
             settings: {
                 theme: string(),
@@ -626,7 +626,7 @@ export class SchemaAlignedAssignTests
 
     nestedObjectFullOverrideReplacesSubtree()
     {
-        const t = schema({
+        const t = validatorFor({
             name: string(),
             settings: {
                 theme: string(),
@@ -644,7 +644,7 @@ export class SchemaAlignedAssignTests
 
     nestedObjectRejectsUnknownKeysInSubtree()
     {
-        const t = schema({
+        const t = validatorFor({
             name: string(),
             settings: {
                 theme: string(),
@@ -654,6 +654,7 @@ export class SchemaAlignedAssignTests
 
         assert.throws(() => t.patchOrOverride(
             { name: "app", settings: { theme: "dark", volume: 80 } },
+            //@ts-expect-error
             { settings: { theme: "light", unknown: "drop-me" } }
         ));
     }
@@ -667,20 +668,21 @@ export class SchemaAlignedAssignTests
 
     rejectsWronglyTypedObjectMemberOverride()
     {
-        const t = schema({
+        const t = validatorFor({
             host: string(),
             port: number(),
         });
 
         assert.throws(() => t.patchOrOverride(
             { host: "localhost", port: 8080 },
+            //@ts-expect-error
             { port: "not-a-number" }
         ));
     }
 
     rejectsWronglyTypedNestedVariadicMemberOverride()
     {
-        const t = schema({
+        const t = validatorFor({
             payload: valueOf(
                 { kind: string(), value: number() },
                 { kind: string(), enabled: boolean() }
@@ -689,6 +691,7 @@ export class SchemaAlignedAssignTests
 
         assert.throws(() => t.patchOrOverride(
             { payload: { kind: "value", value: 10 } },
+            //@ts-expect-error
             { payload: { value: "not-a-number" } }
         ));
     }
@@ -699,7 +702,7 @@ export class SchemaAlignedAssignTests
 
     nestedVariadicFieldSwitchesShapeWithinParentObject()
     {
-        const t = schema({
+        const t = validatorFor({
             name: string(),
             payload: valueOf(
                 { kind: string(), value: number() },
@@ -712,13 +715,13 @@ export class SchemaAlignedAssignTests
             { payload: { kind: "b", label: "override", enabled: true } }
         );
 
-        // payload switches variant â†’ full replace of the nested variadic, parent key preserved
+        // payload switches variant full replace of the nested variadic, parent key preserved
         assert.deepStrictEqual(result, { name: "test", payload: { kind: "b", label: "override", enabled: true } });
     }
 
     nestedVariadicFieldMergesWithinSameShape()
     {
-        const t = schema({
+        const t = validatorFor({
             name: string(),
             payload: valueOf(
                 { kind: string(), value: number(), extra: string("default") },
@@ -731,13 +734,13 @@ export class SchemaAlignedAssignTests
             { payload: { value: 99 } }
         );
 
-        // payload stays in same variant â†’ merge preserving base keys
+        // payload stays in same variant merge preserving base keys
         assert.deepStrictEqual(result, { name: "test", payload: { kind: "a", value: 99, extra: "keep" } });
     }
 
     deeplyNestedVariadicSwitchesAtLeafLevel()
     {
-        const t = schema({
+        const t = validatorFor({
             app: string(),
             config: {
                 target: valueOf(
@@ -752,13 +755,13 @@ export class SchemaAlignedAssignTests
             { config: { target: { mode: "proxy", fallback: "backup", timeout: 5000 } } }
         );
 
-        // Deep nested variadic switches â†’ leaf replaced entirely, parent keys preserved
+        // Deep nested variadic switches leaf replaced entirely, parent keys preserved
         assert.deepStrictEqual(result, { app: "svc", config: { target: { mode: "proxy", fallback: "backup", timeout: 5000 } } });
     }
 
     optionalsSwitchInDeepNestedTree()
     {
-        const t = schema({
+        const t = validatorFor({
             app: string(),
             config: {
                 target: valueOf(
@@ -773,7 +776,7 @@ export class SchemaAlignedAssignTests
             { config: { target: { fallback: "backup" } } }
         );
 
-        // Deep nested variadic switches â†’ leaf replaced entirely, parent keys preserved
+        // Deep nested variadic switches leaf replaced entirely, parent keys preserved
         assert.deepStrictEqual(result, { app: "svc", config: { target: { fallback: "backup" } } });
     }
 
@@ -808,7 +811,7 @@ export class SchemaAlignedAssignTests
     }
 
     // --------------------------------------------------
-    // Collections (arrays and records) â€” replace entirely
+    // Collections (arrays and records) replace entirely
     // --------------------------------------------------
 
     arrayOverrideReplacesEntirely()
@@ -828,12 +831,12 @@ export class SchemaAlignedAssignTests
     }
 
     // --------------------------------------------------
-    // Edge cases â€” undefined / null overrides
+    // Edge cases undefined / null overrides
     // --------------------------------------------------
 
     undefinedOverrideIsSkipped()
     {
-        const t = schema({
+        const t = validatorFor({
             host: string(),
             port: number(),
         });
@@ -848,7 +851,7 @@ export class SchemaAlignedAssignTests
 
     nullOverrideIsSkipped()
     {
-        const t = schema({
+        const t = validatorFor({
             host: string(),
             port: number(),
         });
@@ -862,12 +865,12 @@ export class SchemaAlignedAssignTests
     }
 
     // --------------------------------------------------
-    // Defaults â€” base populated from schema defaults when not provided
+    // Defaults base populated from schema defaults when not provided
     // --------------------------------------------------
 
     usesSchemaDefaultsWhenBaseHasMissingOptionalKeys()
     {
-        const t = schema({
+        const t = validatorFor({
             host: string(),
             port: number(8080),
             debug: boolean(false),

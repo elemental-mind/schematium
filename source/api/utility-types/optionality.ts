@@ -7,6 +7,11 @@ type StrictlyRequiredEntry = { [forceRequired]: true; };
 export type OptionalEntry = { [required]: false; };
 type StrictlyOptionalEntry = { [forceRequired]: false; };
 
+export type DeepPartial<T> =
+    T extends readonly unknown[] ? { [Key in keyof T]: DeepPartial<T[Key]>; } :
+    T extends object ? { [Key in keyof T]?: DeepPartial<T[Key]>; } :
+    T;
+
 
 export type ForceRequired<T, ForcedState extends boolean> =
     Omit<T, typeof required | typeof forceRequired> &

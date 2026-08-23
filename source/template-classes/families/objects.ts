@@ -5,7 +5,7 @@ import type { InternalValueTemplate, ValueTemplateConstructor } from "../base.ts
 export interface InternalObjectTemplate<T = any> extends InternalValueTemplate<T>
 {
     strict: boolean;
-    entries: Array<[string, InternalValueTemplate<any>]>;
+    entries: Readonly<Record<string, InternalValueTemplate<any>>>;
     keys: Set<string>;
     hasNonCloneDefaultMembers: boolean;
 }
@@ -31,7 +31,7 @@ export function createObjectTemplate(ValueTemplate: ValueTemplateConstructor): O
         }
 
         public strict: boolean = true;
-        public entries: Array<[string, InternalValueTemplate<any>]> = [];
+        public readonly entries: Readonly<Record<string, InternalValueTemplate<any>>>;
         public keys: Set<string> = new Set();
         public hasNonCloneDefaultMembers: boolean = false;
         private membersWithDefaultValues: Map<string, InternalValueTemplate<any>> = new Map();
@@ -41,24 +41,32 @@ export function createObjectTemplate(ValueTemplate: ValueTemplateConstructor): O
             super();
             ObjectTemplate.TemplateCache.set(templateObject, this);
             this.isOptional = true;
+            const entries: Array<[string, InternalValueTemplate<any>]> = [];
 
             for (const [key, value] of Object.entries(templateObject))
             {
                 const subTemplate = value instanceof ValueTemplate ? value : this.registry.convertTypeInputToTemplate(value as TypeOption);
 
                 this.keys.add(key);
-                this.entries.push([key, subTemplate]);
+                entries.push([key, subTemplate]);
 
                 if (subTemplate.hasDefaultValue)
                     this.membersWithDefaultValues.set(key, subTemplate);
 
                 this.isOptional &&= subTemplate.isOptional;
             }
+
+            this.entries = Object.freeze(Object.fromEntries(entries));
         }
 
         get hasDefaultValue()
         {
             return super.hasDefaultValue || this.membersWithDefaultValues.size !== 0;
+        }
+
+        isObject(): this is this
+        {
+            return true;
         }
 
         parseIntoRawType = this.parseObject;
@@ -74,7 +82,7 @@ export function createObjectTemplate(ValueTemplate: ValueTemplateConstructor): O
                 return validator.rejectWith(TypeMismatch, "Expected object");
 
             const input = value as Record<string, unknown>;
-            for (const [key, template] of this.entries)
+            for (const [key, template] of Object.entries(this.entries))
             {
                 validator.pathTrace.push(key);
 
@@ -102,7 +110,7 @@ export function createObjectTemplate(ValueTemplate: ValueTemplateConstructor): O
             const overrideObject = override as Record<string, unknown>;
             const result: Record<string, unknown> = {};
 
-            for (const [key, template] of this.entries)
+            for (const [key, template] of Object.entries(this.entries))
             {
                 if (Object.hasOwn(overrideObject, key))
                     result[key] = template.merge(baseObject[key], overrideObject[key]);
