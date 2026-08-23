@@ -1,7 +1,7 @@
 import { generateTemplateAPI } from "./api/api-generator.ts";
 
 //Definition Essentials
-export { TemplateObject, TypeOption } from "./api/definition-interface.ts";
+export type { TemplateObject, TypeOption } from "./api/definition-interface.ts";
 //Definition Components
 export const { validatorFor, string, number, boolean, object, valueOf, oneOf, record, recordOf, array, arrayOf } = generateTemplateAPI();
 
