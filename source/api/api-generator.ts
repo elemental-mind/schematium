@@ -39,76 +39,88 @@ export type ValidatorFor<Input, Extensions extends TemplateAPIExtensions = {}> =
     never;
 export type ValidatorEntriesFor<Template extends TemplateObject, Extensions extends TemplateAPIExtensions = {}> = { readonly [Key in keyof Template]: ValidatorFor<Template[Key], Extensions>; };
 
-function generateDefinitionAPI<Extensions extends TemplateAPIExtensions>(registry: TemplateRegistry)
+export interface GeneratedTemplateAPI<Extensions extends TemplateAPIExtensions = {}>
+{
+    validatorFor: {
+        <T extends TemplateObject>(template: T): ObjectValidatorFor<T, Extensions>;
+        <T extends ValueAPI<any>>(template: T): ValidatorFor<T, Extensions>;
+    };
+    string: {
+        (): DefinitionAPI<string> & RequiredEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "primitive">;
+        (defaultValue: string): CheckAPI<string> & OptionalEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "primitive">;
+    };
+    number: {
+        (): DefinitionAPI<number> & RequiredEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "primitive">;
+        (defaultValue: number): CheckAPI<number> & OptionalEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "primitive">;
+    };
+    boolean: {
+        (): DefinitionAPI<boolean> & RequiredEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "primitive">;
+        (defaultValue: boolean): CheckAPI<boolean> & OptionalEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "primitive">;
+    };
+    object<T extends TemplateObject>(value: T): ObjectDefinitionAPI<T> & RequiredEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "object">;
+    valueOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): DefinitionAPI<InferTypeDefinitionType<T[number]>> & RequiredEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "variadic">;
+    oneOf<const T extends readonly [string | number, ...(string | number)[]]>(...possibleValues: T): DefinitionAPI<T[number]> & RequiredEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "variadic">;
+    record<T>(defaultValue: Record<string, T>, cloneOnDefaultAssignment?: boolean): CollectionDefinitionAPI<Record<string, T>> & OptionalEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "collection">;
+    recordOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): CollectionDefinitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & RequiredEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "collection">;
+    array<T>(defaultValue: T[], cloneOnDefaultAssignment?: boolean): CollectionDefinitionAPI<T[]> & OptionalEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "collection">;
+    arrayOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): CollectionDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & RequiredEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "collection">;
+}
+
+function generateDefinitionAPI<Extensions extends TemplateAPIExtensions>(registry: TemplateRegistry): GeneratedTemplateAPI<Extensions>
 {
     const { StringTemplate, NumberTemplate, BooleanTemplate, VariadicTemplate, ObjectTemplate, RecordTemplate, ArrayTemplate, LiteralTemplate } = registry;
 
-    function validatorFor<T extends TemplateObject>(template: T): ObjectValidatorFor<T, Extensions>;
-    function validatorFor<T extends ValueAPI<any>>(template: T): ValidatorFor<T, Extensions>;
     function validatorFor(template: TemplateObject | ValueAPI<any>): any
     {
         return template instanceof registry.ValueTemplate ? template : ObjectTemplate.fromTemplateObject(template as TemplateObject);
     }
 
-    function string(): DefinitionAPI<string> & RequiredEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "primitive">;
-    function string(defaultValue: string): CheckAPI<string> & OptionalEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "primitive">;
-    function string(defaultValue?: string)
+    function string(defaultValue?: string): any
     {
         return defaultValue !== undefined ? new StringTemplate().withDefault(defaultValue) : new StringTemplate();
     }
 
-    function number(): DefinitionAPI<number> & RequiredEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "primitive">;
-    function number(defaultValue: number): CheckAPI<number> & OptionalEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "primitive">;
-    function number(defaultValue?: number)
+    function number(defaultValue?: number): any
     {
         return defaultValue !== undefined ? new NumberTemplate().withDefault(defaultValue) : new NumberTemplate();
     }
 
-    function boolean(): DefinitionAPI<boolean> & RequiredEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "primitive">;
-    function boolean(defaultValue: boolean): CheckAPI<boolean> & OptionalEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "primitive">;
-    function boolean(defaultValue?: boolean)
+    function boolean(defaultValue?: boolean): any
     {
         return defaultValue !== undefined ? new BooleanTemplate().withDefault(defaultValue) : new BooleanTemplate();
     }
 
-    function valueOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): DefinitionAPI<InferTypeDefinitionType<T[number]>> & RequiredEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "variadic">;
-    function valueOf(...types: any[])
+    function valueOf(...types: any[]): any
     {
         return registry.convertTypeInputsToTemplate(...types) as any;
     }
 
-    function oneOf<const T extends readonly [string | number, ...(string | number)[]]>(...possibleValues: T): DefinitionAPI<T[number]> & RequiredEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "variadic">;
-    function oneOf(...possibleValues: any[])
+    function oneOf(...possibleValues: any[]): any
     {
         return new VariadicTemplate(...possibleValues.map(value => new LiteralTemplate(value))) as any;
     }
 
-    function object<T extends TemplateObject>(value: T): ObjectDefinitionAPI<T> & RequiredEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "object">;
-    function object(value: any)
+    function object(value: any): any
     {
         return ObjectTemplate.fromTemplateObject(value) as any;
     }
 
-    function record<T>(defaultValue: Record<string, T>, cloneOnDefaultAssignment?: boolean): CollectionDefinitionAPI<Record<string, T>> & OptionalEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "collection">;
-    function record(defaultValue: Record<string, any>, cloneOnDefaultAssignment: boolean = true)
+    function record(defaultValue: Record<string, any>, cloneOnDefaultAssignment: boolean = true): any
     {
         return new RecordTemplate(registry.inferTemplateFromValues(...Object.values(defaultValue))).withDefault(defaultValue, cloneOnDefaultAssignment);
     }
 
-    function recordOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): CollectionDefinitionAPI<Record<string, InferTypeDefinitionType<T[number]>>> & RequiredEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "collection">;
-    function recordOf(...types: any[])
+    function recordOf(...types: any[]): any
     {
         return new RecordTemplate(registry.convertTypeInputsToTemplate(...types)) as any;
     }
 
-    function array<T>(defaultValue: T[], cloneOnDefaultAssignment?: boolean): CollectionDefinitionAPI<T[]> & OptionalEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "collection">;
-    function array(defaultValue: any[], cloneOnDefaultAssignment = true)
+    function array(defaultValue: any[], cloneOnDefaultAssignment = true): any
     {
         return new ArrayTemplate(registry.inferTemplateFromValues(...Object.values(defaultValue))).withDefault(defaultValue, cloneOnDefaultAssignment);
     }
 
-    function arrayOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): CollectionDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & RequiredEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "collection">;
-    function arrayOf(...types: any[])
+    function arrayOf(...types: any[]): any
     {
         return new ArrayTemplate(registry.convertTypeInputsToTemplate(...types)) as any;
     }
@@ -116,7 +128,7 @@ function generateDefinitionAPI<Extensions extends TemplateAPIExtensions>(registr
     return { validatorFor, string, number, boolean, object, valueOf, oneOf, record, recordOf, array, arrayOf };
 }
 
-export function generateTemplateAPI<Extensions extends TemplateAPIExtensions = {}>(BaseClass: new (...args: any[]) => any = Object)
+export function generateTemplateAPI<Extensions extends TemplateAPIExtensions = {}>(BaseClass: new (...args: any[]) => any = Object): GeneratedTemplateAPI<Extensions>
 {
     return generateDefinitionAPI<Extensions>(new TemplateRegistry(BaseClass));
 }
