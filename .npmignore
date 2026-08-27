@@ -8,3 +8,4 @@ node_modules/
 .npmignore
 *.spec.ts
 *.test.ts
+AGENTS.md
