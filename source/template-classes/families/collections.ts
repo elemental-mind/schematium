@@ -1,8 +1,7 @@
 import type { ValidationAPI } from "../../api/definition-interface.ts";
+import type { InternalValueTemplate } from "../../api/interal-interface.ts";
 import type { InferCollectionEntryType } from "../../api/utility-types/inference.ts";
 import type { Validator } from "../../validation/validation.ts";
-import type { InternalValueTemplate } from "../base.ts";
-import type { TemplateRegistry } from "../registry.ts";
 
 import { TypeMismatch, ValidationIssue } from "../../validation/validation.ts";
 import { ValueTemplate } from "../base.ts";
@@ -21,9 +20,9 @@ abstract class CollectionTemplate<T> extends ValueTemplate<T>
         ((key: string | number, value: InferCollectionEntryType<T>) => boolean) |
         ((key: string | number, value: InferCollectionEntryType<T>, validator: ValidationAPI) => void);
 
-    constructor(registry: TemplateRegistry, entryTemplate: InternalValueTemplate<any>)
+    constructor(entryTemplate: InternalValueTemplate<any>)
     {
-        super(registry);
+        super();
         this.entryTemplate = entryTemplate;
     }
 

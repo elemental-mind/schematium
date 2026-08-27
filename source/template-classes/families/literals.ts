@@ -1,7 +1,6 @@
 import type { LiteralType } from "../../api/definition-interface.ts";
+import type { InternalValueTemplate } from "../../api/interal-interface.ts";
 import type { Validator } from "../../validation/validation.ts";
-import type { InternalValueTemplate } from "../base.ts";
-import type { TemplateRegistry } from "../registry.ts";
 
 import { TypeMismatch } from "../../validation/validation.ts";
 import { BooleanTemplate, NumberTemplate, StringTemplate } from "./primitives.ts";
@@ -12,11 +11,11 @@ export class LiteralTemplate<T extends LiteralType> extends ValueTemplate<T>
     permittedValue: T;
     permittedValueTemplate: InternalValueTemplate<T>;
 
-    constructor(registry: TemplateRegistry, permittedValue: T)
+    constructor(permittedValue: T)
     {
-        super(registry);
+        super();
         this.permittedValue = permittedValue;
-        this.permittedValueTemplate = registry.inferTemplateFromValue(permittedValue);
+        this.permittedValueTemplate = this.registry.inferTemplateFromValue(permittedValue);
 
         const isPrimitiveTemplate = [NumberTemplate, StringTemplate, BooleanTemplate]
             .some(PrimitiveTemplate => this.permittedValueTemplate instanceof PrimitiveTemplate);

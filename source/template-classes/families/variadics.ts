@@ -1,6 +1,5 @@
 import type { ValidationTolerances } from "../../api/validator-interface.ts";
-import type { InternalValueTemplate } from "../base.ts";
-import type { TemplateRegistry } from "../registry.ts";
+import type { InternalValueTemplate } from "../../api/interal-interface.ts";
 
 import { ParseError, UnknownValue, Validator } from "../../validation/validation.ts";
 import { ValueTemplate } from "../base.ts";
@@ -19,9 +18,9 @@ export class VariadicTemplate<T> extends ValueTemplate<T>
     public permittedTypes: InternalValueTemplate<any>[];
     public parseStrategyGroups?: Map<InternalValueTemplate<any>["parseIntoRawType"], InternalValueTemplate<any>[]>;
 
-    constructor(registry: TemplateRegistry, ...permittedTypes: InternalValueTemplate<any>[])
+    constructor(...permittedTypes: InternalValueTemplate<any>[])
     {
-        super(registry);
+        super();
         this.permittedTypes = permittedTypes.sort((type1, type2) => type1.matchingPriority - type2.matchingPriority);
 
         for (const template of permittedTypes)

@@ -4,6 +4,7 @@ import type { ParseResult, ValidationResult } from "../validation/validation.ts"
 import type { TemplateRegistry } from "./registry.ts";
 
 import { ParseError, ParseSuccessResult, TypeMismatch, UndefinedValue, ValidationIssue, Validator } from "../validation/validation.ts";
+import type { InternalValueTemplate } from "../api/interal-interface.ts";
 
 export type ValueTemplateConstructor = new (...args: any[]) => InternalValueTemplate<any>;
 export type TemplateMixin = (Base: ValueTemplateConstructor) => ValueTemplateConstructor;
@@ -14,29 +15,13 @@ export interface ValueAPI<T>
     [containedType]: T;
 };
 
-export interface InternalValueTemplate<T = any>
-{
-    registry: TemplateRegistry;
-
-    matchingPriority: number;
-    isOptional: boolean;
-    hasDefaultValue: boolean;
-
-    withDefault(defaultValue: T, cloneWhenAssigned?: boolean): any;
-    parseWithValidation(value: string, validator: Validator): T | undefined;
-    parseIntoRawType(value: string, validator: Validator): T | undefined;
-    parseObject(value: string, validator: Validator): T | undefined;
-    identifiesBaseType(value: unknown): boolean;
-    check(value: unknown, settings?: ValidationTolerances): value is T;
-    validateWithValidator(value: unknown, validator: Validator): Validator;
-    validateType(value: unknown, validator: Validator): Validator;
-    getDefault(): any;
-    merge(base: any, checkedPatch: any): any;
-}
-
 export abstract class ValueTemplate<T> implements ValidatorAPI<T>, CheckAPI<T>, DefaultsAPI<T>
 {
-    readonly registry: TemplateRegistry;
+    // The registry serves as a resolver for the specific subtemplates we need.
+    // As we have this lib extensible with Mixins, we keep a separate registry for each mixin as the tempaltes are not identical in behaviour due to mixin behavour variances.
+    // To mot mix templates of different mixins and thus different behaviour we can not hard code the registry at compile time.
+    // Look into the constructor of the TemplateRegistry to see registry being defined there as the TemplateRegistry instance once a new API with a certain mixin is defined.
+    declare readonly registry: TemplateRegistry;
 
     declare [containedType]: T;
 
@@ -47,11 +32,6 @@ export abstract class ValueTemplate<T> implements ValidatorAPI<T>, CheckAPI<T>, 
     protected default?: T;
     protected readonly objectTemplate: boolean = false;
     protected readonly typeLabel: string = "value";
-
-    constructor(registry: TemplateRegistry)
-    {
-        this.registry = registry;
-    }
 
     get required(): any
     {

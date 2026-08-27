@@ -1,6 +1,5 @@
 import type { TemplateObject, TypeOption } from "../../api/definition-interface.ts";
-import type { InternalValueTemplate } from "../base.ts";
-import type { TemplateRegistry } from "../registry.ts";
+import type { InternalValueTemplate } from "../../api/interal-interface.ts";
 
 import { MissingMember, TypeMismatch, UnknownMember, Validator } from "../../validation/validation.ts";
 import { ValueTemplate } from "../base.ts";
@@ -22,16 +21,16 @@ export class ObjectTemplate<T> extends ValueTemplate<T>
     private membersWithDefaultValues: Map<string, InternalValueTemplate<any>> = new Map();
     protected readonly objectTemplate = true;
 
-    constructor(registry: TemplateRegistry, templateObject: TemplateObject)
+    constructor(templateObject: TemplateObject)
     {
-        super(registry);
-        registry.cacheObjectTemplate(templateObject, this);
+        super();
+        this.registry.cacheObjectTemplate(templateObject, this);
         this.isOptional = true;
         const entries: Array<[string, InternalValueTemplate<any>]> = [];
 
         for (const [key, value] of Object.entries(templateObject))
         {
-            const subTemplate = registry.convertTypeInputToTemplate(value as TypeOption);
+            const subTemplate = this.registry.convertTypeInputToTemplate(value as TypeOption);
 
             this.keys.add(key);
             entries.push([key, subTemplate]);

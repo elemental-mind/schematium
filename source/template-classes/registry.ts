@@ -1,48 +1,48 @@
 import type { TemplateObject, TypeOption } from "../api/definition-interface.ts";
-import type { InternalValueTemplate, ValueTemplateConstructor } from "./base.ts";
-import type { ArrayTemplateConstructor, RecordTemplateConstructor } from "./families/collections.ts";
-import type { ObjectTemplateConstructor } from "./families/objects.ts";
-import type { PrimitiveTemplateConstructor } from "./families/primitives.ts";
-import type { VariadicTemplateConstructor } from "./families/variadics.ts";
-import type { LiteralTemplateConstructor } from "./families/literals.ts";
+import type { TemplateMixin } from "./base.ts";
 
-import { createValueTemplate } from "./base.ts";
-import { createCollectionTemplates } from "./families/collections.ts";
-import { createObjectTemplate } from "./families/objects.ts";
-import { createPrimitiveTemplates } from "./families/primitives.ts";
-import { createVariadicTemplate } from "./families/variadics.ts";
-import { createLiteralTemplate } from "./families/literals.ts";
+import { ValueTemplate } from "./base.ts";
+import { ArrayTemplate, RecordTemplate } from "./families/collections.ts";
+import { ObjectTemplate } from "./families/objects.ts";
+import { BooleanTemplate, NumberTemplate, StringTemplate } from "./families/primitives.ts";
+import { VariadicTemplate } from "./families/variadics.ts";
+import { LiteralTemplate } from "./families/literals.ts";
+import { InternalValueTemplate } from "../api/interal-interface.ts";
 
 /** Owns one mutually-compatible family of template classes and its resolution rules. */
 export class TemplateRegistry
 {
-    readonly ValueTemplate: ValueTemplateConstructor;
-    readonly StringTemplate: PrimitiveTemplateConstructor<string>;
-    readonly NumberTemplate: PrimitiveTemplateConstructor<number>;
-    readonly BooleanTemplate: PrimitiveTemplateConstructor<boolean>;
-    readonly VariadicTemplate: VariadicTemplateConstructor;
-    readonly ObjectTemplate: ObjectTemplateConstructor;
-    readonly RecordTemplate: RecordTemplateConstructor;
-    readonly ArrayTemplate: ArrayTemplateConstructor;
-    readonly LiteralTemplate: LiteralTemplateConstructor;
+    readonly StringTemplate: typeof StringTemplate;
+    readonly NumberTemplate: typeof NumberTemplate;
+    readonly BooleanTemplate: typeof BooleanTemplate;
+    readonly VariadicTemplate: typeof VariadicTemplate;
+    readonly ObjectTemplate: typeof ObjectTemplate;
+    readonly RecordTemplate: typeof RecordTemplate;
+    readonly ArrayTemplate: typeof ArrayTemplate;
+    readonly LiteralTemplate: typeof LiteralTemplate;
+    private readonly objectTemplateCache = new WeakMap<TemplateObject, InternalValueTemplate<any>>();
 
-    constructor(BaseClass: new (...args: any[]) => any = Object)
+    constructor(mixin: TemplateMixin)
     {
-        this.ValueTemplate = createValueTemplate(BaseClass, this);
+        this.StringTemplate = mixin(StringTemplate) as typeof StringTemplate;
+        this.NumberTemplate = mixin(NumberTemplate) as typeof NumberTemplate;
+        this.BooleanTemplate = mixin(BooleanTemplate) as typeof BooleanTemplate;
+        this.VariadicTemplate = mixin(VariadicTemplate) as typeof VariadicTemplate;
+        this.ObjectTemplate = mixin(ObjectTemplate) as typeof ObjectTemplate;
+        this.RecordTemplate = mixin(RecordTemplate) as typeof RecordTemplate;
+        this.ArrayTemplate = mixin(ArrayTemplate) as typeof ArrayTemplate;
+        this.LiteralTemplate = mixin(LiteralTemplate) as typeof LiteralTemplate;
 
-        const primitives = createPrimitiveTemplates(this.ValueTemplate);
-        this.StringTemplate = primitives.StringTemplate;
-        this.NumberTemplate = primitives.NumberTemplate;
-        this.BooleanTemplate = primitives.BooleanTemplate;
-
-        const collections = createCollectionTemplates(this.ValueTemplate);
-        this.RecordTemplate = collections.RecordTemplate;
-        this.ArrayTemplate = collections.ArrayTemplate;
-
-        this.ObjectTemplate = createObjectTemplate(this.ValueTemplate);
-        this.LiteralTemplate = createLiteralTemplate(this.ValueTemplate);
-
-        this.VariadicTemplate = createVariadicTemplate(this.ValueTemplate);
+        // We declared a "registry" prop on ValueTemplate, but did not set it yet. Thus we need to set it here to keep the family together and not mix different declartion roots.
+        // Bind the registry once to each fresh mixed prototype before instances exist, keeping it off instances without adding another inheritance layer.
+        const mixedTemplates = [this.StringTemplate, this.NumberTemplate, this.BooleanTemplate, this.VariadicTemplate, this.ObjectTemplate, this.RecordTemplate, this.ArrayTemplate, this.LiteralTemplate];
+        const builtInTemplates = [StringTemplate, NumberTemplate, BooleanTemplate, VariadicTemplate, ObjectTemplate, RecordTemplate, ArrayTemplate, LiteralTemplate];
+        for (let index = 0; index < mixedTemplates.length; index++)
+        {
+            if (mixedTemplates[index] === builtInTemplates[index])
+                throw new Error("Template mixin must return a subclass");
+            Object.defineProperty(mixedTemplates[index].prototype, "registry", { value: this });
+        }
     }
 
     inferTemplateFromValue(exampleValue: any): InternalValueTemplate<any>
@@ -102,9 +102,15 @@ export class TemplateRegistry
                 return type() as unknown as InternalValueTemplate<any>;
             case "object":
                 if (type !== null)
-                    return type instanceof this.ValueTemplate
-                        ? type
-                        : this.ObjectTemplate.fromTemplateObject(type as TemplateObject);
+                {
+                    if (type instanceof ValueTemplate)
+                    {
+                        if (type.registry !== this)
+                            throw new Error("Template belongs to a different generated API");
+                        return type;
+                    }
+                    return this.objectTemplateFor(type as TemplateObject);
+                }
         }
         throw new Error("Type constraint not recognized");
     }
@@ -128,4 +134,23 @@ export class TemplateRegistry
         }
         throw new Error("Primitive tag not recognized");
     }
+
+    objectTemplateFor(template: TemplateObject): InternalValueTemplate<any>
+    {
+        if (typeof template !== "object")
+            throw new Error("Expected template object, but got raw value instead");
+
+        const cached = this.objectTemplateCache.get(template);
+        if (cached)
+            return cached;
+
+        const objectTemplate = new this.ObjectTemplate(template);
+        return objectTemplate;
+    }
+
+    cacheObjectTemplate(template: TemplateObject, objectTemplate: InternalValueTemplate<any>): void
+    {
+        this.objectTemplateCache.set(template, objectTemplate);
+    }
+
 }
