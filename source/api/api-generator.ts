@@ -2,9 +2,10 @@ import type { CheckAPI, CollectionDefinitionAPI, DefinitionAPI, LiteralType, Obj
 import type { InferSchemaType, InferTypeDefinitionType } from "./utility-types/inference.ts";
 import type { OptionalEntry, RequiredEntry } from "./utility-types/optionality.ts";
 import type { ObjectValidatorAPI, ValidatorAPI } from "./validator-interface.ts";
-import type { ValueAPI } from "../template-classes/base.ts";
+import type { TemplateMixin, ValueAPI } from "../template-classes/base.ts";
 
 import { TemplateRegistry } from "../template-classes/registry.ts";
+import { ValueTemplate } from "../template-classes/base.ts";
 
 export interface TemplateAPIExtensions
 {
@@ -22,11 +23,10 @@ export interface TemplateAPIExtensions
 }
 
 type GetExtension<Extensions, Group extends PropertyKey, Kind extends PropertyKey> =
-    Group extends keyof Extensions
-    ? NonNullable<Extensions[Group]> extends infer ExtensionGroup
-    ? Kind extends keyof ExtensionGroup ? NonNullable<ExtensionGroup[Kind]> : {}
-    : {}
-    : {};
+    Group extends keyof Extensions ?
+    NonNullable<Extensions[Group]> extends infer ExtensionGroup ?
+    Kind extends keyof ExtensionGroup ?
+    NonNullable<ExtensionGroup[Kind]> : {} : {} : {};
 type ValueValidator<Value, Extensions> = ValidatorAPI<Value, GetExtension<Extensions, "validationExtensions", "general">, GetExtension<Extensions, "validationExtensions", "object">> & GetExtension<Extensions, "validationExtensions", "general">;
 
 export type ObjectValidatorFor<Template extends TemplateObject, Extensions extends TemplateAPIExtensions = {}> = ObjectValidatorAPI<InferSchemaType<Template>, ValidatorEntriesFor<Template, Extensions>, GetExtension<Extensions, "validationExtensions", "general">, GetExtension<Extensions, "validationExtensions", "object">> & GetExtension<Extensions, "validationExtensions", "general"> & GetExtension<Extensions, "validationExtensions", "object">;
@@ -72,7 +72,7 @@ function generateDefinitionAPI<Extensions extends TemplateAPIExtensions>(registr
 
     function validatorFor(template: TemplateObject | ValueAPI<any>): any
     {
-        return template instanceof registry.ValueTemplate ? template : ObjectTemplate.fromTemplateObject(template as TemplateObject);
+        return template instanceof ValueTemplate ? registry.convertTypeInputToTemplate(template as any) : registry.objectTemplateFor(template as TemplateObject);
     }
 
     function string(defaultValue?: string): any
@@ -102,7 +102,7 @@ function generateDefinitionAPI<Extensions extends TemplateAPIExtensions>(registr
 
     function object(value: any): any
     {
-        return ObjectTemplate.fromTemplateObject(value) as any;
+        return registry.objectTemplateFor(value) as any;
     }
 
     function record(defaultValue: Record<string, any>, cloneOnDefaultAssignment: boolean = true): any
@@ -128,7 +128,7 @@ function generateDefinitionAPI<Extensions extends TemplateAPIExtensions>(registr
     return { validatorFor, string, number, boolean, object, valueOf, oneOf, record, recordOf, array, arrayOf };
 }
 
-export function generateTemplateAPI<Extensions extends TemplateAPIExtensions = {}>(BaseClass: new (...args: any[]) => any = Object): GeneratedTemplateAPI<Extensions>
+export function generateTemplateAPI<Extensions extends TemplateAPIExtensions = {}>(mixin: TemplateMixin): GeneratedTemplateAPI<Extensions>
 {
-    return generateDefinitionAPI<Extensions>(new TemplateRegistry(BaseClass));
+    return generateDefinitionAPI<Extensions>(new TemplateRegistry(mixin));
 }
