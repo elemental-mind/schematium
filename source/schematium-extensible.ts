@@ -1,7 +1,7 @@
-// Factory for creating custom API instances with BaseClass injection into the class hierarchy
+// Factory for creating custom API instances by mixing into the common template base
 export { generateTemplateAPI } from "./api/api-generator.ts";
 export type { GeneratedTemplateAPI, ObjectValidatorFor, TemplateAPIExtensions, ValidatorEntriesFor, ValidatorFor } from "./api/api-generator.ts";
-export type { ValueAPI } from "./template-classes/base.ts";
+export type { TemplateMixin, ValueAPI, ValueTemplateConstructor } from "./template-classes/base.ts";
 
 // API interfaces for implementing custom fluent definition chains
 export * from "./api/definition-interface.ts";

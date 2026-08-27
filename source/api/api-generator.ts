@@ -128,7 +128,9 @@ function generateDefinitionAPI<Extensions extends TemplateAPIExtensions>(registr
     return { validatorFor, string, number, boolean, object, valueOf, oneOf, record, recordOf, array, arrayOf };
 }
 
-export function generateTemplateAPI<Extensions extends TemplateAPIExtensions = {}>(mixin: TemplateMixin): GeneratedTemplateAPI<Extensions>
+const defaultTemplateRegistry = new TemplateRegistry();
+
+export function generateTemplateAPI<Extensions extends TemplateAPIExtensions = {}>(mixin?: TemplateMixin): GeneratedTemplateAPI<Extensions>
 {
-    return generateDefinitionAPI<Extensions>(new TemplateRegistry(mixin));
+    return generateDefinitionAPI<Extensions>(mixin ? new TemplateRegistry(mixin) : defaultTemplateRegistry);
 }

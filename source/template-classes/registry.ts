@@ -22,24 +22,24 @@ export class TemplateRegistry
     readonly LiteralTemplate: typeof LiteralTemplate;
     private readonly objectTemplateCache = new WeakMap<TemplateObject, InternalValueTemplate<any>>();
 
-    constructor(mixin: TemplateMixin)
+    constructor(mixin?: TemplateMixin)
     {
-        this.StringTemplate = mixin(StringTemplate) as typeof StringTemplate;
-        this.NumberTemplate = mixin(NumberTemplate) as typeof NumberTemplate;
-        this.BooleanTemplate = mixin(BooleanTemplate) as typeof BooleanTemplate;
-        this.VariadicTemplate = mixin(VariadicTemplate) as typeof VariadicTemplate;
-        this.ObjectTemplate = mixin(ObjectTemplate) as typeof ObjectTemplate;
-        this.RecordTemplate = mixin(RecordTemplate) as typeof RecordTemplate;
-        this.ArrayTemplate = mixin(ArrayTemplate) as typeof ArrayTemplate;
-        this.LiteralTemplate = mixin(LiteralTemplate) as typeof LiteralTemplate;
+        this.StringTemplate = mixin ? mixin(StringTemplate) as typeof StringTemplate : StringTemplate;
+        this.NumberTemplate = mixin ? mixin(NumberTemplate) as typeof NumberTemplate : NumberTemplate;
+        this.BooleanTemplate = mixin ? mixin(BooleanTemplate) as typeof BooleanTemplate : BooleanTemplate;
+        this.VariadicTemplate = mixin ? mixin(VariadicTemplate) as typeof VariadicTemplate : VariadicTemplate;
+        this.ObjectTemplate = mixin ? mixin(ObjectTemplate) as typeof ObjectTemplate : ObjectTemplate;
+        this.RecordTemplate = mixin ? mixin(RecordTemplate) as typeof RecordTemplate : RecordTemplate;
+        this.ArrayTemplate = mixin ? mixin(ArrayTemplate) as typeof ArrayTemplate : ArrayTemplate;
+        this.LiteralTemplate = mixin ? mixin(LiteralTemplate) as typeof LiteralTemplate : LiteralTemplate;
 
         // We declared a "registry" prop on ValueTemplate, but did not set it yet. Thus we need to set it here to keep the family together and not mix different declartion roots.
-        // Bind the registry once to each fresh mixed prototype before instances exist, keeping it off instances without adding another inheritance layer.
+        // Bind the shared default classes once, or each fresh mixed class, before instances exist. This keeps the registry off instances without another inheritance layer.
         const mixedTemplates = [this.StringTemplate, this.NumberTemplate, this.BooleanTemplate, this.VariadicTemplate, this.ObjectTemplate, this.RecordTemplate, this.ArrayTemplate, this.LiteralTemplate];
         const builtInTemplates = [StringTemplate, NumberTemplate, BooleanTemplate, VariadicTemplate, ObjectTemplate, RecordTemplate, ArrayTemplate, LiteralTemplate];
         for (let index = 0; index < mixedTemplates.length; index++)
         {
-            if (mixedTemplates[index] === builtInTemplates[index])
+            if (mixin && mixedTemplates[index] === builtInTemplates[index])
                 throw new Error("Template mixin must return a subclass");
             Object.defineProperty(mixedTemplates[index].prototype, "registry", { value: this });
         }
