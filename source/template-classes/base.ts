@@ -1,4 +1,5 @@
 import type { CheckAPI, DefaultsAPI, ValidationAPI } from "../api/definition-interface.ts";
+import type { ExpectedType, ReflectionAPI } from "../api/reflection-interface.ts";
 import type { ObjectValidatorAPI, ValidationSettings, ValidationTolerances, ValidatorAPI, ValidatorEntries } from "../api/validator-interface.ts";
 import type { ParseResult, ValidationResult } from "../validation/validation.ts";
 import type { TemplateRegistry } from "./registry.ts";
@@ -15,13 +16,14 @@ export interface ValueAPI<T>
     [containedType]: T;
 };
 
-export abstract class ValueTemplate<T> implements ValidatorAPI<T>, CheckAPI<T>, DefaultsAPI<T>
+export abstract class ValueTemplate<T> implements ValidatorAPI<T>, ReflectionAPI, CheckAPI<T>, DefaultsAPI<T>
 {
     // The registry serves as a resolver for the specific subtemplates we need.
     // As we have this lib extensible with Mixins, we keep a separate registry for each mixin as the tempaltes are not identical in behaviour due to mixin behavour variances.
     // To mot mix templates of different mixins and thus different behaviour we can not hard code the registry at compile time.
     // Look into the constructor of the TemplateRegistry to see registry being defined there as the TemplateRegistry instance once a new API with a certain mixin is defined.
     declare readonly registry: TemplateRegistry;
+    abstract readonly type: ExpectedType | readonly ExpectedType[];
 
     declare [containedType]: T;
 
@@ -53,6 +55,16 @@ export abstract class ValueTemplate<T> implements ValidatorAPI<T>, CheckAPI<T>, 
     isObject(): this is this & ObjectValidatorAPI<NonNullable<T> & object, ValidatorEntries>
     {
         return this.objectTemplate;
+    }
+
+    expects(type: ExpectedType): boolean
+    {
+        return false;
+    }
+
+    expectsExclusively(type: ExpectedType): boolean
+    {
+        return this.expects(type);
     }
 
     accepts(validator: (value: T) => boolean): any;
@@ -158,5 +170,16 @@ export abstract class ValueTemplate<T> implements ValidatorAPI<T>, CheckAPI<T>, 
     merge(base: any, checkedPatch: any): any
     {
         return checkedPatch;
+    }
+
+    getUniqueTypes(templates: readonly InternalValueTemplate<any>[]): ExpectedType[]
+    {
+        const types: ExpectedType[] = [];
+        for (const template of templates)
+        {
+            const reflectedType = template.type;
+            Array.isArray(reflectedType) ? types.push(...reflectedType as ExpectedType[]) : types.push(reflectedType as ExpectedType);
+        }
+        return [...new Set(types)];
     }
 }

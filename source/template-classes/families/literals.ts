@@ -1,4 +1,5 @@
 import type { LiteralType } from "../../api/definition-interface.ts";
+import type { ExpectedType } from "../../api/reflection-interface.ts";
 import type { InternalValueTemplate } from "../../api/interal-interface.ts";
 import type { Validator } from "../../validation/validation.ts";
 
@@ -10,6 +11,8 @@ export class LiteralTemplate<T extends LiteralType> extends ValueTemplate<T>
 {
     permittedValue: T;
     permittedValueTemplate: InternalValueTemplate<T>;
+
+    get type(): ExpectedType | readonly ExpectedType[] { return this.permittedValueTemplate.type; }
 
     constructor(permittedValue: T)
     {
@@ -39,5 +42,15 @@ export class LiteralTemplate<T extends LiteralType> extends ValueTemplate<T>
     identifiesBaseType(value: unknown): boolean
     {
         return this.permittedValueTemplate.identifiesBaseType(value);
+    }
+
+    expects(type: ExpectedType): boolean
+    {
+        return this.permittedValueTemplate.expects(type);
+    }
+
+    expectsExclusively(type: ExpectedType): boolean
+    {
+        return this.permittedValueTemplate.expectsExclusively(type);
     }
 }

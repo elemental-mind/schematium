@@ -104,6 +104,20 @@ export class TemplateMixinTests
     }
 }
 
+export class ReflectionAPITests
+{
+    expectationQueriesRecognizeFactoriesFromTheSameSharedRegistry()
+    {
+        const firstAPI = generateTemplateAPI();
+        const secondAPI = generateTemplateAPI();
+        const validator = firstAPI.validatorFor(firstAPI.number());
+
+        assert.strictEqual(firstAPI.number, secondAPI.number);
+        assert.strictEqual(validator.expects(firstAPI.number), true);
+        assert.strictEqual(validator.expects(secondAPI.number), true);
+    }
+}
+
 export class ValidatorApiTransitionTests
 {
     valueDefinitionCanBePromotedToAValidator()

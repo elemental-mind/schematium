@@ -5,6 +5,7 @@ export type { TemplateMixin, ValueAPI, ValueTemplateConstructor } from "./templa
 
 // API interfaces for implementing custom fluent definition chains
 export * from "./api/definition-interface.ts";
+export * from "./api/reflection-interface.ts";
 export * from "./api/validator-interface.ts";
 
 export * from "./api/utility-types/inference.ts";

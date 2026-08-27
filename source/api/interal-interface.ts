@@ -1,8 +1,9 @@
 import type { ValidationTolerances } from "./validator-interface.ts";
+import type { ReflectionAPI } from "./reflection-interface.ts";
 import type { Validator } from "../validation/validation.ts";
 import type { TemplateRegistry } from "../template-classes/registry.ts";
 
-export interface InternalValueTemplate<T = any>
+export interface InternalValueTemplate<T = any> extends ReflectionAPI
 {
     registry: TemplateRegistry;
 

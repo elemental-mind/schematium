@@ -2,6 +2,7 @@ import { generateTemplateAPI } from "./api/api-generator.ts";
 
 //Definition Essentials
 export type { TemplateObject, TypeOption } from "./api/definition-interface.ts";
+export type { ExpectedType, MemberReflectionAPI as MemberReflectionAPI, ReflectionAPI } from "./api/reflection-interface.ts";
 export type { ValueAPI } from "./template-classes/base.ts";
 //Definition Components
 export const { validatorFor, string, number, boolean, object, valueOf, oneOf, record, recordOf, array, arrayOf } = generateTemplateAPI();

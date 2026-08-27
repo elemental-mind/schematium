@@ -1,4 +1,5 @@
 import type { ValidationTolerances } from "../../api/validator-interface.ts";
+import type { ExpectedType } from "../../api/reflection-interface.ts";
 import type { InternalValueTemplate } from "../../api/interal-interface.ts";
 
 import { ParseError, UnknownValue, Validator } from "../../validation/validation.ts";
@@ -17,6 +18,11 @@ export class VariadicTemplate<T> extends ValueTemplate<T>
 {
     public permittedTypes: InternalValueTemplate<any>[];
     public parseStrategyGroups?: Map<InternalValueTemplate<any>["parseIntoRawType"], InternalValueTemplate<any>[]>;
+
+    get type(): readonly ExpectedType[]
+    {
+        return this.getUniqueTypes(this.permittedTypes);
+    }
 
     constructor(...permittedTypes: InternalValueTemplate<any>[])
     {
@@ -76,6 +82,16 @@ export class VariadicTemplate<T> extends ValueTemplate<T>
     identifiesBaseType(value: unknown): boolean
     {
         return this.permittedTypes.some(type => type.identifiesBaseType(value));
+    }
+
+    expects(type: ExpectedType): boolean
+    {
+        return this.permittedTypes.some(template => template.expects(type));
+    }
+
+    expectsExclusively(type: ExpectedType): boolean
+    {
+        return this.permittedTypes.every(template => template.expects(type));
     }
 
     validateType(value: unknown, validator: Validator)

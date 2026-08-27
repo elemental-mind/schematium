@@ -2,6 +2,7 @@ import type { CheckAPI, CollectionDefinitionAPI, DefinitionAPI, LiteralType, Obj
 import type { InferSchemaType, InferTypeDefinitionType } from "./utility-types/inference.ts";
 import type { OptionalEntry, RequiredEntry } from "./utility-types/optionality.ts";
 import type { ObjectValidatorAPI, ValidatorAPI } from "./validator-interface.ts";
+import type { MemberReflectionAPI, ReflectionAPI } from "./reflection-interface.ts";
 import type { TemplateMixin, ValueAPI } from "../template-classes/base.ts";
 
 import { TemplateRegistry } from "../template-classes/registry.ts";
@@ -26,12 +27,14 @@ type GetExtension<Extensions, Group extends PropertyKey, Kind extends PropertyKe
     NonNullable<Extensions[Group]> extends infer ExtensionGroup ?
     Kind extends keyof ExtensionGroup ?
     NonNullable<ExtensionGroup[Kind]> : {} : {} : {};
-type ValueValidator<Value, Extensions> = ValidatorAPI<Value, GetExtension<Extensions, "validationExtensions", "general">, GetExtension<Extensions, "validationExtensions", "object">> & GetExtension<Extensions, "validationExtensions", "general">;
+type ValueValidator<Value, Extensions> = ValidatorAPI<Value, GetExtension<Extensions, "validationExtensions", "general">, GetExtension<Extensions, "validationExtensions", "object">> & ReflectionAPI & GetExtension<Extensions, "validationExtensions", "general">;
+type MemberValueValidator<Value, Extensions> = ValueValidator<Value, Extensions> & MemberReflectionAPI;
 
-export type ObjectValidatorFor<Template extends TemplateObject, Extensions extends TemplateAPIExtensions = {}> = ObjectValidatorAPI<InferSchemaType<Template>, ValidatorEntriesFor<Template, Extensions>, GetExtension<Extensions, "validationExtensions", "general">, GetExtension<Extensions, "validationExtensions", "object">> & GetExtension<Extensions, "validationExtensions", "general"> & GetExtension<Extensions, "validationExtensions", "object">;
+export type ObjectValidatorFor<Template extends TemplateObject, Extensions extends TemplateAPIExtensions = {}> = ObjectValidatorAPI<InferSchemaType<Template>, ValidatorEntriesFor<Template, Extensions>, GetExtension<Extensions, "validationExtensions", "general">, GetExtension<Extensions, "validationExtensions", "object">> & MemberReflectionAPI & GetExtension<Extensions, "validationExtensions", "general"> & GetExtension<Extensions, "validationExtensions", "object">;
 export type ValidatorFor<Input, Extensions extends TemplateAPIExtensions = {}> =
     Input extends ObjectDefinitionAPI<infer Template> ? ObjectValidatorFor<Template, Extensions> :
     Input extends TemplateObject ? ObjectValidatorFor<Input, Extensions> :
+    Input extends CollectionDefinitionAPI<infer Value> ? MemberValueValidator<Value, Extensions> :
     Input extends PrimitiveType ? ValueValidator<ReturnType<Input> extends ValueAPI<infer Value> ? Value : never, Extensions> :
     Input extends ValueAPI<infer Value> ? ValueValidator<Value, Extensions> :
     Input extends LiteralType ? ValueValidator<Input, Extensions> :

@@ -1,4 +1,5 @@
 import type { ValidationAPI } from "../../api/definition-interface.ts";
+import type { ExpectedType, MemberReflectionAPI } from "../../api/reflection-interface.ts";
 import type { InternalValueTemplate } from "../../api/interal-interface.ts";
 import type { InferCollectionEntryType } from "../../api/utility-types/inference.ts";
 import type { Validator } from "../../validation/validation.ts";
@@ -12,13 +13,15 @@ export interface InternalCollectionTemplate<T = any> extends InternalValueTempla
     acceptsEntries(validator: (key: string | number, value: InferCollectionEntryType<T>, validator: ValidationAPI) => void): this;
 }
 
-abstract class CollectionTemplate<T> extends ValueTemplate<T>
+abstract class CollectionTemplate<T> extends ValueTemplate<T> implements MemberReflectionAPI
 {
     readonly matchingPriority: number = 2;
     protected entryTemplate: InternalValueTemplate<any>;
     protected entryGuard?:
         ((key: string | number, value: InferCollectionEntryType<T>) => boolean) |
         ((key: string | number, value: InferCollectionEntryType<T>, validator: ValidationAPI) => void);
+
+    get memberType(): ExpectedType | readonly ExpectedType[] { return this.entryTemplate.type; }
 
     constructor(entryTemplate: InternalValueTemplate<any>)
     {
@@ -32,6 +35,16 @@ abstract class CollectionTemplate<T> extends ValueTemplate<T>
     {
         this.entryGuard = validator;
         return this;
+    }
+
+    expectsMember(type: ExpectedType): boolean
+    {
+        return this.entryTemplate.expects(type);
+    }
+
+    expectsMemberExclusively(type: ExpectedType): boolean
+    {
+        return this.entryTemplate.expectsExclusively(type);
     }
 
     parseIntoRawType = this.parseObject;
@@ -51,6 +64,13 @@ abstract class CollectionTemplate<T> extends ValueTemplate<T>
 
 export class RecordTemplate<T> extends CollectionTemplate<Record<string, T>>
 {
+    get type(): ExpectedType { return this.registry.record; }
+
+    expects(type: ExpectedType): boolean
+    {
+        return type === this.registry.record;
+    }
+
     identifiesBaseType(value: unknown): boolean
     {
         return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -70,6 +90,13 @@ export class RecordTemplate<T> extends CollectionTemplate<Record<string, T>>
 
 export class ArrayTemplate<T> extends CollectionTemplate<T[]>
 {
+    get type(): ExpectedType { return this.registry.array; }
+
+    expects(type: ExpectedType): boolean
+    {
+        return type === this.registry.array;
+    }
+
     identifiesBaseType(value: unknown): boolean
     {
         return Array.isArray(value);

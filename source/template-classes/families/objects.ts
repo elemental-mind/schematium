@@ -1,4 +1,5 @@
 import type { TemplateObject, TypeOption } from "../../api/definition-interface.ts";
+import type { ExpectedType, MemberReflectionAPI } from "../../api/reflection-interface.ts";
 import type { InternalValueTemplate } from "../../api/interal-interface.ts";
 
 import { MissingMember, TypeMismatch, UnknownMember, Validator } from "../../validation/validation.ts";
@@ -12,7 +13,7 @@ export interface InternalObjectTemplate<T = any> extends InternalValueTemplate<T
     hasNonCloneDefaultMembers: boolean;
 }
 
-export class ObjectTemplate<T> extends ValueTemplate<T>
+export class ObjectTemplate<T> extends ValueTemplate<T> implements MemberReflectionAPI
 {
     public strict: boolean = true;
     public readonly entries: Readonly<Record<string, InternalValueTemplate<any>>>;
@@ -20,6 +21,14 @@ export class ObjectTemplate<T> extends ValueTemplate<T>
     public hasNonCloneDefaultMembers: boolean = false;
     private membersWithDefaultValues: Map<string, InternalValueTemplate<any>> = new Map();
     protected readonly objectTemplate = true;
+
+    get type(): ExpectedType { return this.registry.object; }
+
+    get memberType(): ExpectedType | readonly ExpectedType[]
+    {
+        const types = this.getUniqueTypes(Object.values(this.entries));
+        return types.length === 1 ? types[0] : types;
+    }
 
     constructor(templateObject: TemplateObject)
     {
@@ -47,6 +56,22 @@ export class ObjectTemplate<T> extends ValueTemplate<T>
     get hasDefaultValue()
     {
         return super.hasDefaultValue || this.membersWithDefaultValues.size !== 0;
+    }
+
+    expects(type: ExpectedType): boolean
+    {
+        return type === this.registry.object;
+    }
+
+    expectsMember(type: ExpectedType): boolean
+    {
+        return Object.values(this.entries).some(template => template.expects(type));
+    }
+
+    expectsMemberExclusively(type: ExpectedType): boolean
+    {
+        const members = Object.values(this.entries);
+        return members.length !== 0 && members.every(template => template.expectsExclusively(type));
     }
 
     parseIntoRawType = this.parseObject;
