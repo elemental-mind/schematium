@@ -1,48 +1,43 @@
 import type { LiteralType } from "../../api/definition-interface.ts";
+import type { InternalValueTemplate } from "../../api/interal-interface.ts";
 import type { Validator } from "../../validation/validation.ts";
-import type { InternalValueTemplate, ValueTemplateConstructor } from "../base.ts";
 
 import { TypeMismatch } from "../../validation/validation.ts";
+import { BooleanTemplate, NumberTemplate, StringTemplate } from "./primitives.ts";
+import { ValueTemplate } from "../base.ts";
 
-export type LiteralTemplateConstructor = new <T extends LiteralType>(value: T) => InternalValueTemplate<T>;
-
-export function createLiteralTemplate(ValueTemplate: ValueTemplateConstructor): LiteralTemplateConstructor
+export class LiteralTemplate<T extends LiteralType> extends ValueTemplate<T>
 {
-    class LiteralTemplate<T extends LiteralType> extends ValueTemplate<T>
+    permittedValue: T;
+    permittedValueTemplate: InternalValueTemplate<T>;
+
+    constructor(permittedValue: T)
     {
-        permittedValue: T;
-        permittedValueTemplate: InternalValueTemplate<T>;
+        super();
+        this.permittedValue = permittedValue;
+        this.permittedValueTemplate = this.registry.inferTemplateFromValue(permittedValue);
 
-        constructor(permittedValue: T)
-        {
-            super();
-            this.permittedValue = permittedValue;
-            this.permittedValueTemplate = this.registry.inferTemplateFromValue(permittedValue);
+        const isPrimitiveTemplate = [NumberTemplate, StringTemplate, BooleanTemplate]
+            .some(PrimitiveTemplate => this.permittedValueTemplate instanceof PrimitiveTemplate);
 
-            const isPrimitiveTemplate = [this.registry.NumberTemplate, this.registry.StringTemplate, this.registry.BooleanTemplate]
-                .some(PrimitiveTemplate => this.permittedValueTemplate instanceof PrimitiveTemplate);
-
-            if (!isPrimitiveTemplate)
-                throw new Error("Only numbers, booleans or strings permitted as literal types");
-        }
-
-        parseIntoRawType(value: string, validator: Validator): T | undefined
-        {
-            return this.permittedValueTemplate.parseIntoRawType(value, validator);
-        }
-
-        validateType(value: unknown, validator: Validator): Validator
-        {
-            return value === this.permittedValue
-                ? validator
-                : validator.rejectWith(TypeMismatch, `Literal "${this.permittedValue}" expected`);
-        }
-
-        identifiesBaseType(value: unknown): boolean
-        {
-            return this.permittedValueTemplate.identifiesBaseType(value);
-        }
+        if (!isPrimitiveTemplate)
+            throw new Error("Only numbers, booleans or strings permitted as literal types");
     }
 
-    return LiteralTemplate;
+    parseIntoRawType(value: string, validator: Validator): T | undefined
+    {
+        return this.permittedValueTemplate.parseIntoRawType(value, validator);
+    }
+
+    validateType(value: unknown, validator: Validator): Validator
+    {
+        return value === this.permittedValue
+            ? validator
+            : validator.rejectWith(TypeMismatch, `Literal "${this.permittedValue}" expected`);
+    }
+
+    identifiesBaseType(value: unknown): boolean
+    {
+        return this.permittedValueTemplate.identifiesBaseType(value);
+    }
 }

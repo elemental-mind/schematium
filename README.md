@@ -45,8 +45,8 @@ template.validate(
   paths, but you can switch into a mode that collects every issue with
   path-traced `ValidationIssue`s using `{ mode: "thorough" }`.
 - **Zero dependencies** at runtime.
-- **Extensible** — bring your own base class / decorator chain via
-  `generateTemplateAPI(BaseClass)`.
+- **Extensible** — mix custom behavior into the built-in template base via
+  `generateTemplateAPI(mixin)`.
 
 ## Quick start
 
@@ -438,7 +438,7 @@ ProfilesConfig.check({ profiles: { alice: "admin", bob: "user" } }); // → true
 ## Extending the API
 
 `schematium` ships a default API instance, but you can create a separate,
-customized API with `generateTemplateAPI(BaseClass?)`. The extension
+customized API with `generateTemplateAPI(mixin?)`. The extension
 entry point is `schematium/extensible`:
 
 ```ts
@@ -457,6 +457,8 @@ import type {
   ValidationResult, // success / rejection union
   ValidationSettings, // per-call settings (tolerances + mode)
   ValidationTolerances, // per-call tolerance settings
+  TemplateMixin, // function that extends the built-in template base
+  ValueTemplateConstructor, // constructor received by a template mixin
   ValueType, // extract the value type from a definition
 } from "schematium/extensible";
 ```
@@ -480,72 +482,90 @@ generateTemplateAPI<{
 }>;
 ```
 
-### Substituting the base class
+### Mixing into template classes
 
-Pass any class (or class-like constructor) as the first argument. The chosen
-base is inserted at the top of every template class hierarchy, so every template
-instance will `instanceof` your class and inherit its members.
+Without a mixin, `generateTemplateAPI()` uses Schematium's built-in template
+classes directly. Pass a mixin only when customization is needed; Schematium
+then passes each concrete class to it and uses the returned subclasses for that
+API instance. A supplied mixin must return a new subclass.
 
 ```ts
-class MyBase {
-  metadata = "custom-base";
-  getBaseInfo() {
-    return "base-info";
-  }
+import {
+  generateTemplateAPI,
+  type ValueTemplateConstructor,
+} from "schematium/extensible";
+
+function withMetadata(Base: ValueTemplateConstructor) {
+  return class extends Base {
+    metadata = "custom-mixin";
+    getMixinInfo() {
+      return "mixin-info";
+    }
+  };
 }
 
-// Expose MyBase on validators as well as installing it at runtime.
+type MetadataExtension = InstanceType<ReturnType<typeof withMetadata>>;
+
+// Expose the mixin on validators as well as installing it at runtime.
 const { validatorFor, string } = generateTemplateAPI<{
-  validationExtensions: { general: MyBase };
-}>(MyBase);
+  validationExtensions: { general: MetadataExtension };
+}>(withMetadata);
 
 const t = validatorFor({
   sample: string("default").required,
 });
 
-t.metadata; // "custom-base"
-t.getBaseInfo(); // "base-info"
+t.metadata; // "custom-mixin"
+t.getMixinInfo(); // "mixin-info"
 ```
 
-If you only need runtime base-class behavior, omit the generic argument. Add it
-to the relevant structured extension positions when its members should also be
-visible to TypeScript:
+If you only need runtime mixin behavior, omit the generic extension type. Add
+it when the mixin's members should also be visible to TypeScript:
 
 ```ts
-class TrackingBase {
-  calls: string[] = [];
-  constructor() {
-    this.calls.push("constructor");
-  }
-}
+import type { TemplateMixin } from "schematium/extensible";
 
-const { validatorFor, boolean } = generateTemplateAPI(TrackingBase);
+let instanceCount = 0;
+const withTracking: TemplateMixin = Base => class extends Base {
+  constructor(...args: any[]) {
+    super(...args);
+    instanceCount++;
+  }
+};
+
+const { validatorFor, boolean } = generateTemplateAPI(withTracking);
 const runtimeTemplate = validatorFor({ enabled: boolean() });
-// runtimeTemplate instanceof TrackingBase
 ```
 
 ### Extending the fluent interfaces
 
-To add new chainable methods, declare a class whose members become part of the
-fluent API, then pass it as the appropriate generic slot. The methods can return
-`this`, so they compose with the built-in modifiers (`.required`, `.optional`,
+When a mixin declares a constructor, forward all arguments to `super` as shown
+above so the built-in template constructor receives its inputs.
+
+To add new chainable methods, return a class whose members become part of the
+fluent API, then pass its instance type as the appropriate generic slot. The
+methods can return `this`, so they compose with the built-in modifiers (`.required`, `.optional`,
 `.accepts(...)`, `.withDefault(...)`, `.acceptsEntries(...)`).
 
 ```ts
-import { generateTemplateAPI } from "schematium/extensible";
+import { generateTemplateAPI, type ValueTemplateConstructor } from "schematium/extensible";
 
-class Taggable {
-  public tagValue?: string;
-  tag(tag: string): this {
-    this.tagValue = tag;
-    return this;
-  }
+function withTagging(Base: ValueTemplateConstructor) {
+  return class extends Base {
+    public tagValue?: string;
+    tag(tag: string): this {
+      this.tagValue = tag;
+      return this;
+    }
+  };
 }
+
+type Taggable = InstanceType<ReturnType<typeof withTagging>>;
 
 // Apply the extension to primitive definitions.
 const { validatorFor, number } = generateTemplateAPI<{
   definitionExtensions: { primitive: Taggable };
-}>(Taggable);
+}>(withTagging);
 
 const n = number(42).tag("my-number");
 n.tagValue; // "my-number"
@@ -558,21 +578,25 @@ are also available on statically known object entries and after `isObject()`
 narrows a general validator:
 
 ```ts
-class ValidationExtension {
-  traceValidation(): this {
-    return this;
-  }
-  inspectEntries(): this {
-    return this;
-  }
+function withValidationExtension(Base: ValueTemplateConstructor) {
+  return class extends Base {
+    traceValidation(): this {
+      return this;
+    }
+    inspectEntries(): this {
+      return this;
+    }
+  };
 }
+
+type ValidationExtension = InstanceType<ReturnType<typeof withValidationExtension>>;
 
 const { number, validatorFor } = generateTemplateAPI<{
   validationExtensions: {
     general: Pick<ValidationExtension, "traceValidation">;
     object: Pick<ValidationExtension, "inspectEntries">;
   };
-}>(ValidationExtension);
+}>(withValidationExtension);
 
 validatorFor(number()).traceValidation();
 validatorFor({ value: number() }).inspectEntries();
@@ -588,19 +612,24 @@ any definition-API surface, including variadics, so the same extension works on
 ```ts
 import {
   generateTemplateAPI,
+  type ValueTemplateConstructor,
   type ValueType,
 } from "schematium/extensible";
 
-class Extension {
-  typeDependentClosure(closure: (value: ValueType<this>) => boolean) {
-    return this;
-  }
+function withTypeDependentClosure(Base: ValueTemplateConstructor) {
+  return class extends Base {
+    typeDependentClosure(closure: (value: ValueType<this>) => boolean) {
+      return this;
+    }
+  };
 }
+
+type Extension = InstanceType<ReturnType<typeof withTypeDependentClosure>>;
 
 // Apply the extension to every definition family.
 const { number, string, valueOf } = generateTemplateAPI<{
   definitionExtensions: { general: Extension };
-}>(Extension);
+}>(withTypeDependentClosure);
 
 number(42)
   .typeDependentClosure((value: number) => true); // ok

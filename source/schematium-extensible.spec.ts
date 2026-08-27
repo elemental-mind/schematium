@@ -1,68 +1,97 @@
 import { Debug } from "unitium";
 import * as assert from "node:assert";
 import { generateTemplateAPI, ValueType } from "./schematium-extensible.ts";
-import type { ValidatorAPI } from "./schematium-extensible.ts";
+import { StringTemplate } from "./template-classes/families/primitives.ts";
+import type { TemplateMixin, ValidatorAPI, ValueTemplateConstructor } from "./schematium-extensible.ts";
 
-export class BaseClassSubstitutionTests
+export class TemplateMixinTests
 {
-    validatorResultShouldContainBaseClassMembers()
+    defaultApiShouldUseTheBuiltInClassesDirectly()
     {
-        class MyBase
-        {
-            metadata = "custom-base";
-            getBaseInfo() { return "base-info"; }
-        }
+        assert.strictEqual(generateTemplateAPI().string().constructor, StringTemplate);
+    }
 
-        const { validatorFor, string } = generateTemplateAPI<{ validationExtensions: { general: MyBase; }; }>(MyBase);
+    registryShouldBeStoredOnTheMixedPrototype()
+    {
+        const mixin: TemplateMixin = Base => class extends Base { };
+        const firstTemplate = generateTemplateAPI(mixin).string();
+        const secondTemplate = generateTemplateAPI(mixin).string();
+        const firstPrototype = Object.getPrototypeOf(firstTemplate);
+        const secondPrototype = Object.getPrototypeOf(secondTemplate);
+
+        assert.strictEqual(Object.hasOwn(firstTemplate, "registry"), false);
+        assert.strictEqual(Object.hasOwn(firstPrototype, "registry"), true);
+        assert.notStrictEqual(firstPrototype.registry, secondPrototype.registry);
+    }
+
+    validatorResultShouldContainMixinMembers()
+    {
+        function withMetadata(Base: ValueTemplateConstructor)
+        {
+            return class extends Base
+            {
+                metadata = "custom-mixin";
+                getMixinInfo() { return "mixin-info"; }
+            };
+        }
+        type MetadataExtension = InstanceType<ReturnType<typeof withMetadata>>;
+
+        const { validatorFor, string } = generateTemplateAPI<{ validationExtensions: { general: MetadataExtension; }; }>(withMetadata);
         const t = validatorFor({
             sample: string("default").required,
         });
 
-        assert.strictEqual(t.metadata, "custom-base");
-        assert.strictEqual(t.getBaseInfo(), "base-info");
+        assert.strictEqual(t.metadata, "custom-mixin");
+        assert.strictEqual(t.getMixinInfo(), "mixin-info");
     }
 
-    validatorResultShouldCallBaseClassMembers()
+    validatorResultShouldCallMixinMembers()
     {
-        class TrackingBase
+        function withTracking(Base: ValueTemplateConstructor)
         {
-            calls: string[] = [];
-            constructor() { this.calls.push("constructor"); }
-            track() { this.calls.push("track"); return this; }
+            return class extends Base
+            {
+                calls: string[] = [];
+                constructor(...args: any[]) { super(...args); this.calls.push("constructor"); }
+                track() { this.calls.push("track"); return this; }
+            };
         }
+        type TrackingExtension = InstanceType<ReturnType<typeof withTracking>>;
 
-        const { validatorFor, string } = generateTemplateAPI<{ validationExtensions: { general: TrackingBase; }; }>(TrackingBase);
+        const { validatorFor, string } = generateTemplateAPI<{ validationExtensions: { general: TrackingExtension; }; }>(withTracking);
         const t = validatorFor({
             test: string("default")
         });
 
-        assert.ok(t.calls.includes("constructor"), "Base class constructor should have been called");
+        assert.ok(t.calls.includes("constructor"), "Mixin constructor should have been called");
 
         t.track();
-        assert.ok(t.calls.includes("track"), "Base class method should be callable on the template");
+        assert.ok(t.calls.includes("track"), "Mixin method should be callable on the template");
     }
 
-    inferredCollectionEntriesShouldUseTheCurrentBaseClass()
+    inferredCollectionEntriesShouldUseTheCurrentMixin()
     {
-        class TrackingBase
+        let instanceCount = 0;
+        const withTracking: TemplateMixin = Base => class extends Base
         {
-            static instanceCount = 0;
-            constructor() { TrackingBase.instanceCount++; }
-        }
+            constructor(...args: any[]) { super(...args); instanceCount++; }
+        };
 
-        const { array } = generateTemplateAPI(TrackingBase);
+        const { array } = generateTemplateAPI(withTracking);
         array([1, 2]);
 
-        assert.strictEqual(TrackingBase.instanceCount, 2, "Both the collection and its inferred entry template should use the custom base class");
+        assert.strictEqual(instanceCount, 2, "Both the collection and its inferred entry template should use the mixin");
     }
 
     objectTemplateCachesShouldBeIsolatedByClassFamily()
     {
-        class FirstBase { }
-        class SecondBase { }
+        const firstMixedBases: ValueTemplateConstructor[] = [];
+        const secondMixedBases: ValueTemplateConstructor[] = [];
+        const firstMixin: TemplateMixin = Base => { const Mixed = class extends Base { }; firstMixedBases.push(Mixed); return Mixed; };
+        const secondMixin: TemplateMixin = Base => { const Mixed = class extends Base { }; secondMixedBases.push(Mixed); return Mixed; };
 
-        const firstAPI = generateTemplateAPI(FirstBase);
-        const secondAPI = generateTemplateAPI(SecondBase);
+        const firstAPI = generateTemplateAPI(firstMixin);
+        const secondAPI = generateTemplateAPI(secondMixin);
         const sharedShape = { kind: "sample" };
         const firstTemplate = firstAPI.validatorFor(sharedShape);
         const cachedFirstTemplate = firstAPI.validatorFor(sharedShape);
@@ -70,8 +99,8 @@ export class BaseClassSubstitutionTests
 
         assert.strictEqual(firstTemplate, cachedFirstTemplate, "A class family should reuse its own cached object template");
         assert.notStrictEqual(firstTemplate, secondTemplate, "Different class families should not share cached object templates");
-        assert.ok(firstTemplate instanceof FirstBase);
-        assert.ok(secondTemplate instanceof SecondBase);
+        assert.ok(firstMixedBases.some(Mixed => firstTemplate instanceof Mixed));
+        assert.ok(secondMixedBases.some(Mixed => secondTemplate instanceof Mixed));
     }
 }
 
@@ -121,18 +150,22 @@ export class ValidatorApiTransitionTests
 
     validationExtensionsAreExposedAfterPromotionAndObjectNarrowing()
     {
-        class Extension
+        function withExtension(Base: ValueTemplateConstructor)
         {
-            validationExtension() { return "validation"; }
-            objectValidationExtension() { return "object"; }
+            return class extends Base
+            {
+                validationExtension() { return "validation"; }
+                objectValidationExtension() { return "object"; }
+            };
         }
+        type Extension = InstanceType<ReturnType<typeof withExtension>>;
 
         const { number, validatorFor } = generateTemplateAPI<{
             validationExtensions: {
                 general: Pick<Extension, "validationExtension">;
                 object: Pick<Extension, "objectValidationExtension">;
             };
-        }>(Extension);
+        }>(withExtension);
         const numberValidator = validatorFor(number());
         const unknownValidator = validatorFor({ value: number() }).entries.value;
         const polymorphicValidator: ValidatorAPI<unknown, Pick<Extension, "validationExtension">, Pick<Extension, "objectValidationExtension">> = validatorFor({ value: number() });
@@ -156,34 +189,42 @@ export class DefinitionApiExtensionTests
 {
     valueDefinitionShouldExposeAdditionalInterfaceMembers()
     {
-        class PrimitiveExtension
+        function withPrimitiveExtension(Base: ValueTemplateConstructor)
         {
-            tag(tag: string): this { return this; }
+            return class extends Base
+            {
+                tag(tag: string): this { return this; }
+            };
         }
+        type PrimitiveExtension = InstanceType<ReturnType<typeof withPrimitiveExtension>>;
 
         const defaultAPI = generateTemplateAPI();
         // @ts-expect-error - .tag() does not exist on the default TemplatingAPI
         assert.throws(() => defaultAPI.string().tag("foo"));
 
         // With the extension type applied, .tag() should be available at the type level
-        const { string } = generateTemplateAPI<{ definitionExtensions: { primitive: PrimitiveExtension; }; }>(PrimitiveExtension);
+        const { string } = generateTemplateAPI<{ definitionExtensions: { primitive: PrimitiveExtension; }; }>(withPrimitiveExtension);
         string().optional.tag("foo");
         string().withDefault("whatever").tag("foo");
     }
 
     valueTemplateShouldReflectAddedInterfaceCalls()
     {
-        class Taggable
+        function withTagging(Base: ValueTemplateConstructor)
         {
-            public tagValue?: string;
-            tag(tag: string): this
+            return class extends Base
             {
-                this.tagValue = tag;
-                return this;
-            }
+                public tagValue?: string;
+                tag(tag: string): this
+                {
+                    this.tagValue = tag;
+                    return this;
+                }
+            };
         }
+        type Taggable = InstanceType<ReturnType<typeof withTagging>>;
 
-        const { number } = generateTemplateAPI<{ definitionExtensions: { primitive: Taggable; }; }>(Taggable);
+        const { number } = generateTemplateAPI<{ definitionExtensions: { primitive: Taggable; }; }>(withTagging);
         const result = number(42).tag("my-number");
 
         assert.strictEqual(result.tagValue, "my-number");
@@ -191,12 +232,16 @@ export class DefinitionApiExtensionTests
 
     baseTypeIsAccessibleInCustomDefinedInterfaces()
     {
-        class Extension
+        function withTypeDependentClosure(Base: ValueTemplateConstructor)
         {
-            typeDependentClosure(closure: (value: ValueType<this>) => boolean) { return this; };
+            return class extends Base
+            {
+                typeDependentClosure(closure: (value: ValueType<this>) => boolean) { return this; };
+            };
         }
+        type Extension = InstanceType<ReturnType<typeof withTypeDependentClosure>>;
 
-        const { number, string, valueOf } = generateTemplateAPI<{ definitionExtensions: { general: Extension; }; }>(Extension);
+        const { number, string, valueOf } = generateTemplateAPI<{ definitionExtensions: { general: Extension; }; }>(withTypeDependentClosure);
         number(42).typeDependentClosure(value => value === 100);
         //@ts-expect-error should throw because boolean =! number
         number(42).typeDependentClosure(value => value === false);
