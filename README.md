@@ -194,13 +194,61 @@ members are filled from schema defaults where available.
 
 ## Validation
 
-Schematium exposes three runtime entry points on every `validatorFor(...)` template:
+Every `validatorFor(...)` template exposes runtime validation and basic type
+reflection. Arrays, records, and shaped objects additionally expose member
+reflection:
 
 | Method                                  | Returns                           | Use when                                                           |
 | --------------------------------------- | --------------------------------- | ------------------------------------------------------------------ |
 | `template.check(value, tolerances?)`    | `value is T` (boolean type guard) | You want a fast boolean decision                                   |
 | `template.validate(value, settings?)`   | `ValidationResult`                | You want every issue, with path traces, using `{mode: "thorough"}` |
 | `template.parseString(text, settings?)` | `ParseResult<T>`                  | Input arrives as a raw string                                      |
+| `template.type`                         | type factory or readonly array     | You need the validator's declared type categories                  |
+| `template.memberType`                   | type factory or readonly array     | You need immediate object or collection member categories          |
+| `template.expects(type)`                | `boolean`                         | You need to know whether an outer type is permitted                |
+| `template.expectsExclusively(type)`     | `boolean`                         | You need to know whether only that outer type is permitted         |
+| `template.expectsMember(type)`          | `boolean`                         | You need to inspect immediate object or collection member types    |
+| `template.expectsMemberExclusively(type)` | `boolean`                       | You need to know whether every immediate member has only that type |
+
+The expectation methods accept a type factory (`string`, `number`, `boolean`,
+`array`, `record`, or `object`), rather than a template instance. `expects` is
+true when the validator permits that outer schema category, and
+`expectsExclusively` is true when every permitted branch has that category.
+`expectsMember` and `expectsMemberExclusively` apply the same queries to
+immediate array entries, record values, or shaped-object properties. Multiple
+literal branches of the same primitive category remain exclusive. Custom
+`accepts(...)` predicates do not affect these queries.
+
+The readonly `type` property exposes the same factory identity directly. A
+single-type validator returns one factory, while a variadic validator returns a
+deduplicated array of its permitted type factories.
+
+The readonly `memberType` property exposes immediate entry or property categories
+for arrays, records, and shaped objects. It returns one factory for one unique
+category or a deduplicated array for multiple categories. An empty shaped object
+returns an empty array. Primitive, literal, and top-level variadic generated
+types expose only the basic reflection surface.
+
+```ts
+const NegativeNumber = validatorFor(number().accepts(value => value < 0));
+NegativeNumber.expects(number); // true
+NegativeNumber.expects(boolean); // false
+
+const NumberOrString = validatorFor(valueOf(number, string));
+NumberOrString.expects(string); // true
+NumberOrString.expectsExclusively(string); // false
+
+const StringArray = validatorFor(arrayOf(string));
+StringArray.type === array; // true
+StringArray.memberType === string; // true
+StringArray.expects(array); // true
+StringArray.expectsMemberExclusively(string); // true
+
+const User = validatorFor({ name: string(), age: number() });
+User.expects(object); // true
+User.expectsMember(string); // true
+User.expectsMemberExclusively(string); // false
+```
 
 ### Traversing object validators
 
@@ -308,6 +356,14 @@ Every value template supports these chainable modifiers:
   (`ValidationSuccessResult` or `RejectionResult`).
 - `template.parseString(text, settings?)` — returns `ParseResult<T>`
   (`ParseSuccessResult<T>` or `RejectionResult`).
+- `template.type` — exposes the declared type factory, or the factories for a
+  variadic validator.
+- `template.memberType` — exposes immediate object or collection member factories
+  on member-capable validators.
+- `template.expects(type)` / `.expectsExclusively(type)` — query outer type
+  categories.
+- `template.expectsMember(type)` / `.expectsMemberExclusively(type)` — query
+  immediate object or collection member categories.
 - `template.getDefault()` — returns the default tree (cloned by default), or
   `undefined` when no default exists.
 - `template.patchOrOverride(base, patch)` — validates a partial patch and
@@ -452,7 +508,9 @@ import {
 import type {
   CollectionDefinitionAPI, // fluent API for arrays and records
   DefinitionAPI, // shape/type of a fluent definition chain
-  ValidatorAPI, // shape/type of a fully-built validatorFor(...)
+  ValidatorAPI, // core validation methods
+  ReflectionAPI, // basic type reflection composed onto generated validators
+  MemberReflectionAPI, // additional reflection for objects and collections
   ValidationAPI, // shape of the validator callback API
   ValidationResult, // success / rejection union
   ValidationSettings, // per-call settings (tolerances + mode)
