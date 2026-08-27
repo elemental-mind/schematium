@@ -1,5 +1,5 @@
 import type { TemplateObject, TypeOption } from "../api/definition-interface.ts";
-import type { TemplateMixin } from "./base.ts";
+import type { TemplateMixin, ValueAPI } from "./base.ts";
 
 import { ValueTemplate } from "./base.ts";
 import { ArrayTemplate, RecordTemplate } from "./families/collections.ts";
@@ -21,6 +21,18 @@ export class TemplateRegistry
     readonly ArrayTemplate: typeof ArrayTemplate;
     readonly LiteralTemplate: typeof LiteralTemplate;
     private readonly objectTemplateCache = new WeakMap<TemplateObject, InternalValueTemplate<any>>();
+
+    readonly validatorFor = (template: TemplateObject | ValueAPI<any>) => template instanceof ValueTemplate ? this.convertTypeInputToTemplate(template as any) : this.objectTemplateFor(template as TemplateObject);
+    readonly string = (defaultValue?: string) => defaultValue !== undefined ? new this.StringTemplate().withDefault(defaultValue) : new this.StringTemplate();
+    readonly number = (defaultValue?: number) => defaultValue !== undefined ? new this.NumberTemplate().withDefault(defaultValue) : new this.NumberTemplate();
+    readonly boolean = (defaultValue?: boolean) => defaultValue !== undefined ? new this.BooleanTemplate().withDefault(defaultValue) : new this.BooleanTemplate();
+    readonly object = (value: TemplateObject) => this.objectTemplateFor(value);
+    readonly valueOf = <const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T) => this.convertTypeInputsToTemplate(...types);
+    readonly oneOf = <const T extends readonly [string | number, ...(string | number)[]]>(...possibleValues: T) => new this.VariadicTemplate(...possibleValues.map(value => new this.LiteralTemplate(value)));
+    readonly record = (defaultValue: Record<string, any>, cloneOnDefaultAssignment: boolean = true) => new this.RecordTemplate(this.inferTemplateFromValues(...Object.values(defaultValue))).withDefault(defaultValue, cloneOnDefaultAssignment);
+    readonly recordOf = <const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T) => new this.RecordTemplate(this.convertTypeInputsToTemplate(...types));
+    readonly array = (defaultValue: any[], cloneOnDefaultAssignment: boolean = true) => new this.ArrayTemplate(this.inferTemplateFromValues(...Object.values(defaultValue))).withDefault(defaultValue, cloneOnDefaultAssignment);
+    readonly arrayOf = <const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T) => new this.ArrayTemplate(this.convertTypeInputsToTemplate(...types));
 
     constructor(mixin?: TemplateMixin)
     {

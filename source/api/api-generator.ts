@@ -5,7 +5,6 @@ import type { ObjectValidatorAPI, ValidatorAPI } from "./validator-interface.ts"
 import type { TemplateMixin, ValueAPI } from "../template-classes/base.ts";
 
 import { TemplateRegistry } from "../template-classes/registry.ts";
-import { ValueTemplate } from "../template-classes/base.ts";
 
 export interface TemplateAPIExtensions
 {
@@ -66,71 +65,11 @@ export interface GeneratedTemplateAPI<Extensions extends TemplateAPIExtensions =
     arrayOf<const T extends readonly [TypeOption, ...TypeOption[]]>(...types: T): CollectionDefinitionAPI<InferTypeDefinitionType<T[number]>[]> & RequiredEntry & GetExtension<Extensions, "definitionExtensions", "general"> & GetExtension<Extensions, "definitionExtensions", "collection">;
 }
 
-function generateDefinitionAPI<Extensions extends TemplateAPIExtensions>(registry: TemplateRegistry): GeneratedTemplateAPI<Extensions>
-{
-    const { StringTemplate, NumberTemplate, BooleanTemplate, VariadicTemplate, ObjectTemplate, RecordTemplate, ArrayTemplate, LiteralTemplate } = registry;
-
-    function validatorFor(template: TemplateObject | ValueAPI<any>): any
-    {
-        return template instanceof ValueTemplate ? registry.convertTypeInputToTemplate(template as any) : registry.objectTemplateFor(template as TemplateObject);
-    }
-
-    function string(defaultValue?: string): any
-    {
-        return defaultValue !== undefined ? new StringTemplate().withDefault(defaultValue) : new StringTemplate();
-    }
-
-    function number(defaultValue?: number): any
-    {
-        return defaultValue !== undefined ? new NumberTemplate().withDefault(defaultValue) : new NumberTemplate();
-    }
-
-    function boolean(defaultValue?: boolean): any
-    {
-        return defaultValue !== undefined ? new BooleanTemplate().withDefault(defaultValue) : new BooleanTemplate();
-    }
-
-    function valueOf(...types: any[]): any
-    {
-        return registry.convertTypeInputsToTemplate(...types) as any;
-    }
-
-    function oneOf(...possibleValues: any[]): any
-    {
-        return new VariadicTemplate(...possibleValues.map(value => new LiteralTemplate(value))) as any;
-    }
-
-    function object(value: any): any
-    {
-        return registry.objectTemplateFor(value) as any;
-    }
-
-    function record(defaultValue: Record<string, any>, cloneOnDefaultAssignment: boolean = true): any
-    {
-        return new RecordTemplate(registry.inferTemplateFromValues(...Object.values(defaultValue))).withDefault(defaultValue, cloneOnDefaultAssignment);
-    }
-
-    function recordOf(...types: any[]): any
-    {
-        return new RecordTemplate(registry.convertTypeInputsToTemplate(...types)) as any;
-    }
-
-    function array(defaultValue: any[], cloneOnDefaultAssignment = true): any
-    {
-        return new ArrayTemplate(registry.inferTemplateFromValues(...Object.values(defaultValue))).withDefault(defaultValue, cloneOnDefaultAssignment);
-    }
-
-    function arrayOf(...types: any[]): any
-    {
-        return new ArrayTemplate(registry.convertTypeInputsToTemplate(...types)) as any;
-    }
-
-    return { validatorFor, string, number, boolean, object, valueOf, oneOf, record, recordOf, array, arrayOf };
-}
-
 const defaultTemplateRegistry = new TemplateRegistry();
 
 export function generateTemplateAPI<Extensions extends TemplateAPIExtensions = {}>(mixin?: TemplateMixin): GeneratedTemplateAPI<Extensions>
 {
-    return generateDefinitionAPI<Extensions>(mixin ? new TemplateRegistry(mixin) : defaultTemplateRegistry);
+    const registry = mixin ? new TemplateRegistry(mixin) : defaultTemplateRegistry;
+    const { validatorFor, string, number, boolean, object, valueOf, oneOf, record, recordOf, array, arrayOf } = registry;
+    return { validatorFor, string, number, boolean, object, valueOf, oneOf, record, recordOf, array, arrayOf } as unknown as GeneratedTemplateAPI<Extensions>;
 }
