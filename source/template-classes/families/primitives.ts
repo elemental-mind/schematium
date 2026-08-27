@@ -1,68 +1,57 @@
 import { ParseError, Validator } from "../../validation/validation.ts";
-import type { InternalValueTemplate, ValueTemplateConstructor } from "../base.ts";
+import { ValueTemplate } from "../base.ts";
 
-export type PrimitiveTemplateConstructor<T> = new () => InternalValueTemplate<T>;
-
-export interface PrimitiveTemplateFamily
+export class StringTemplate extends ValueTemplate<string>
 {
-    StringTemplate: PrimitiveTemplateConstructor<string>;
-    NumberTemplate: PrimitiveTemplateConstructor<number>;
-    BooleanTemplate: PrimitiveTemplateConstructor<boolean>;
+    readonly matchingPriority: number = 4;
+    protected readonly typeLabel = "string";
+
+    parseIntoRawType(value: string, validator: Validator): string | undefined
+    {
+        return value;
+    }
+
+    identifiesBaseType(value: unknown): boolean
+    {
+        return typeof value === "string";
+    }
 }
 
-export function createPrimitiveTemplates(ValueTemplate: ValueTemplateConstructor): PrimitiveTemplateFamily
+export class NumberTemplate extends ValueTemplate<number>
 {
-    class StringTemplate extends ValueTemplate<string>
+    readonly matchingPriority: number = 0;
+    protected readonly typeLabel = "number";
+
+    parseIntoRawType(value: string, validator: Validator): number | undefined
     {
-        readonly matchingPriority: number = 4;
+        if (value.trim() !== "")
+            return Number(value);
 
-        parseIntoRawType(value: string, validator: Validator): string | undefined
-        {
-            return value;
-        }
-
-        identifiesBaseType(value: unknown): boolean
-        {
-            return typeof value === "string";
-        }
+        validator.rejectWith(ParseError, "'" + value + "' can not be parsed as number");
     }
 
-    class NumberTemplate extends ValueTemplate<number>
+    identifiesBaseType(value: unknown): boolean
     {
-        readonly matchingPriority: number = 0;
+        return typeof value === "number" && Number.isFinite(value);
+    }
+}
 
-        parseIntoRawType(value: string, validator: Validator): number | undefined
-        {
-            if (value.trim() !== "")
-                return Number(value);
+export class BooleanTemplate extends ValueTemplate<boolean>
+{
+    readonly matchingPriority: number = 1;
+    protected readonly typeLabel = "boolean";
 
-            validator.rejectWith(ParseError, "'" + value + "' can not be parsed as number");
-        }
+    parseIntoRawType(value: string, validator: Validator): boolean | undefined
+    {
+        const lowered = value.trim().toLowerCase();
+        if (lowered === "true" || lowered === "1") return true;
+        if (lowered === "false" || lowered === "0") return false;
 
-        identifiesBaseType(value: unknown): boolean
-        {
-            return typeof value === "number" && Number.isFinite(value);
-        }
+        validator.rejectWith(ParseError, "'" + value + "' can not be parsed as boolean");
     }
 
-    class BooleanTemplate extends ValueTemplate<boolean>
+    identifiesBaseType(value: unknown): boolean
     {
-        readonly matchingPriority: number = 1;
-
-        parseIntoRawType(value: string, validator: Validator): boolean | undefined
-        {
-            const lowered = value.trim().toLowerCase();
-            if (lowered === "true" || lowered === "1") return true;
-            if (lowered === "false" || lowered === "0") return false;
-
-            validator.rejectWith(ParseError, "'" + value + "' can not be parsed as boolean");
-        }
-
-        identifiesBaseType(value: unknown): boolean
-        {
-            return typeof value === "boolean";
-        }
+        return typeof value === "boolean";
     }
-
-    return { StringTemplate, NumberTemplate, BooleanTemplate };
 }
