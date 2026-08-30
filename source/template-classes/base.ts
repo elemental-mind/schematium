@@ -1,6 +1,6 @@
-import type { CheckAPI, DefaultsAPI, ValidationAPI } from "../api/definition-interface.ts";
+import type { CheckAPI, DefaultsAPI, ValidationContext } from "../api/definition-interface.ts";
 import type { ExpectedType, ReflectionAPI } from "../api/reflection-interface.ts";
-import type { ObjectValidatorAPI, ValidationSettings, ValidationTolerances, ValidatorAPI, ValidatorEntries } from "../api/validator-interface.ts";
+import type { ObjectValidatorAPI, ValidationAndParsingAPI, ValidationSettings, ValidationTolerances, ValidatorEntries } from "../api/validation-interface.ts";
 import type { ParseResult, ValidationResult } from "../validation/validation.ts";
 import type { TemplateRegistry } from "./registry.ts";
 
@@ -16,7 +16,7 @@ export interface ValueAPI<T>
     [containedType]: T;
 };
 
-export abstract class ValueTemplate<T> implements ValidatorAPI<T>, ReflectionAPI, CheckAPI<T>, DefaultsAPI<T>
+export abstract class ValueTemplate<T> implements ValidationAndParsingAPI<T>, ReflectionAPI, CheckAPI<T>, DefaultsAPI<T>
 {
     // The registry serves as a resolver for the specific subtemplates we need.
     // As we have this lib extensible with Mixins, we keep a separate registry for each mixin as the tempaltes are not identical in behaviour due to mixin behavour variances.
@@ -29,7 +29,7 @@ export abstract class ValueTemplate<T> implements ValidatorAPI<T>, ReflectionAPI
 
     public readonly matchingPriority: number = 3;
     public isOptional = false;
-    public customValidator?: ((value: T) => boolean) | ((value: T, validator: ValidationAPI) => void);
+    public customValidator?: ((value: T) => boolean) | ((value: T, context: ValidationContext) => void);
     public cloneDefaultWhenDefaultRequested = true;
     protected default?: T;
     protected readonly objectTemplate: boolean = false;
@@ -68,7 +68,7 @@ export abstract class ValueTemplate<T> implements ValidatorAPI<T>, ReflectionAPI
     }
 
     accepts(validator: (value: T) => boolean): any;
-    accepts(validator: (value: T, validator: ValidationAPI) => void): any;
+    accepts(validator: (value: T, context: ValidationContext) => void): any;
     accepts(validator: any): any
     {
         this.customValidator = validator;

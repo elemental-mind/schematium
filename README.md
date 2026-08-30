@@ -116,7 +116,7 @@ const newUserWithDefaults = UserConfig.patchOrOverride({}, userInput);
 
 ## Concepts
 
-### Definition API vs. Validator API
+### Definition API vs. validation and parsing API
 
 Every template in Schematium is backed by a single class, which exposes **two
 complementary interfaces**:
@@ -125,7 +125,7 @@ complementary interfaces**:
   _constructing_ a template (`string()`, `number().required`,
   `arrayOf(...).withDefault([])`, `accepts(...)`, etc.). It lives on the value
   returned by the primitive, variadic, and collection factory functions.
-- **Validator API** — the operational surface you use while _consuming_ a template
+- **Validation and parsing API** — the operational surface you use while _consuming_ a template
   (`.check(value)`, `.validate(value, settings)`,
   `.parseString(text, settings)`, `.getDefault()`). Call `validatorFor(...)`
   with either an object template or an existing value definition to expose it.
@@ -304,9 +304,9 @@ if (someValidator.isObject()) {
 ### Custom validators with issue reporting
 
 `accepts(...)` and `acceptsEntries(...)` accept either a `(value) => boolean`
-predicate or a `(value, validator) => void` callback. The callback form gives
-you a `ValidationAPI` you can call
-`validator.rejectWith(ValidationIssue,
+predicate or a `(value, context) => void` callback. The callback form gives
+you a `ValidationContext` you can call
+`context.rejectWith(ValidationIssue,
 message)` on to attach a custom issue to
 the result — which is only useful in `"thorough"` mode, since
 `"fastNoIssueReport"` discards issue detail.
@@ -315,14 +315,14 @@ the result — which is only useful in `"thorough"` mode, since
 communicate validation failures. Throwing will abort validation entirely and
 bubble out of `template.validate(...)` / `template.parseString(...)`, bypassing
 the result-based contract. Instead, signal failures by calling
-`validator.rejectWith(ValidationIssue, "message")` on the provided context —
+`context.rejectWith(ValidationIssue, "message")` on the provided context —
 this keeps the failure inside the validation pipeline and lets the caller handle
 it as a normal `RejectionResult`:
 
 ```ts
-const Port = number().accepts((value, validator) => {
+const Port = number().accepts((value, context) => {
   if (!(value > 0 && value < 65536)) {
-    validator.rejectWith(ValidationIssue, "Port out of range");
+    context.rejectWith(ValidationIssue, "Port out of range");
   }
 });
 ```
@@ -340,16 +340,16 @@ Every value template supports these chainable modifiers:
 - `.required` — mark as required (overrides optionality from a default).
 - `.optional` — mark as optional (overrides a prior `.required`).
 - `.accepts((value) => boolean)` — install a custom validator (boolean form).
-- `.accepts((value, validator) => void)` — install a validator that can emit
-  `ValidationIssue`s via the `ValidationAPI` callback.
+- `.accepts((value, context) => void)` — install a validator that can emit
+  `ValidationIssue`s via the `ValidationContext` callback.
 - `.withDefault(value, cloneOnAssign?)` — set a default value and implicitly
   make it optional.
 - `.acceptsEntries((key, value) => boolean)` — for collections, validate each
   entry (boolean form).
-- `.acceptsEntries((key, value, validator) => void)` — entry-level validator
+- `.acceptsEntries((key, value, context) => void)` — entry-level validator
   with issue reporting.
 
-### Validator API
+### Validation and parsing API
 
 - `template.check(value, tolerances?)` — type-guard; returns `value is T`.
 - `template.validate(value, settings?)` — returns `ValidationResult`
@@ -508,10 +508,10 @@ import {
 import type {
   CollectionDefinitionAPI, // fluent API for arrays and records
   DefinitionAPI, // shape/type of a fluent definition chain
-  ValidatorAPI, // core validation methods
+  ValidationAndParsingAPI, // core validation and parsing methods
   ReflectionAPI, // basic type reflection composed onto generated validators
   MemberReflectionAPI, // additional reflection for objects and collections
-  ValidationAPI, // shape of the validator callback API
+  ValidationContext, // context provided to validator callbacks
   ValidationResult, // success / rejection union
   ValidationSettings, // per-call settings (tolerances + mode)
   ValidationTolerances, // per-call tolerance settings
@@ -627,11 +627,11 @@ const { validatorFor, number } = generateTemplateAPI<{
 
 const n = number(42).tag("my-number");
 n.tagValue; // "my-number"
-validatorFor({ n }).check({ n: 7 }); // built-in validator API is preserved
+validatorFor({ n }).check({ n: 7 }); // built-in validation and parsing API is preserved
 ```
 
 Validation extensions are exposed only after `validatorFor(...)` performs the
-Definition-to-Validator API transition. Object-specific validation extensions
+definition-to-validation-and-parsing API transition. Object-specific validation extensions
 are also available on statically known object entries and after `isObject()`
 narrows a general validator:
 

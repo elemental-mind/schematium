@@ -1,12 +1,12 @@
 import * as assert from "assert";
 
-export type { ParseResult, ParseSuccessResult, TemplateObject, ValidationAPI, ValidationSettings, ValidationSuccessResult, ValidationTolerances, ValueType } from "../../source/schematium-extensible.ts";
+export type { ParseResult, ParseSuccessResult, TemplateObject, ValidationContext, ValidationSettings, ValidationSuccessResult, ValidationTolerances, ValueType } from "../../source/schematium-extensible.ts";
 export { RejectionResult, ValidationIssue, ValidationResult } from "../../source/schematium-extensible.ts";
 
 import type { ParseResult, ParseSuccessResult, TemplateObject, ValidationSettings, ValidationTolerances, ValueType, } from "../../source/schematium-extensible.ts";
 import { generateTemplateAPI, ValidationResult, } from "../../source/schematium-extensible.ts";
 
-interface TestValidatorAPI
+interface TestValidationAndParsingAPI
 {
     isOptional: boolean;
     check(value: unknown, settings?: ValidationTolerances): value is ValueType<this>;
@@ -28,7 +28,7 @@ export const {
     recordOf,
     array,
     arrayOf,
-} = generateTemplateAPI<{ definitionExtensions: { general: TestValidatorAPI; }; }>();
+} = generateTemplateAPI<{ definitionExtensions: { general: TestValidationAndParsingAPI; }; }>();
 
 
 export function assertParseSuccess<T>(result: ParseResult<T>, expectedValue: T): void

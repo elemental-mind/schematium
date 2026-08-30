@@ -26,7 +26,7 @@ export interface ObjectDefinitionAPI<T extends TemplateObject> extends Definitio
 export interface CollectionDefinitionAPI<T> extends DefinitionAPI<T>
 {
     acceptsEntries(validator: (key: string | number, value: InferCollectionEntryType<T>) => boolean): this;
-    acceptsEntries(validator: (key: string | number, value: InferCollectionEntryType<T>, validator: ValidationAPI) => void): this;
+    acceptsEntries(validator: (key: string | number, value: InferCollectionEntryType<T>, context: ValidationContext) => void): this;
 }
 
 export interface OptionalityAPI<T> extends ValueAPI<T>
@@ -40,7 +40,7 @@ export interface DefaultsAPI<T> extends ValueAPI<T>
     withDefault: (defaultValue: T, cloneWhenAssigned?: boolean) => SetRequired<this, false>;
 }
 
-export interface ValidationAPI
+export interface ValidationContext
 {
     rejectWith(errorType: typeof ValidationIssue, message?: string): void;
 }
@@ -48,5 +48,5 @@ export interface ValidationAPI
 export interface CheckAPI<T> extends OptionalityAPI<T>
 {
     accepts(validator: (value: T) => boolean): this;
-    accepts(validator: (value: T, validator: ValidationAPI) => void): this;
+    accepts(validator: (value: T, context: ValidationContext) => void): this;
 }

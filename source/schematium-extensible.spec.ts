@@ -2,7 +2,7 @@ import { Debug } from "unitium";
 import * as assert from "node:assert";
 import { generateTemplateAPI, ValueType } from "./schematium-extensible.ts";
 import { StringTemplate } from "./template-classes/families/primitives.ts";
-import type { TemplateMixin, ValidatorAPI, ValueTemplateConstructor } from "./schematium-extensible.ts";
+import type { TemplateMixin, ValidationAndParsingAPI, ValueTemplateConstructor } from "./schematium-extensible.ts";
 
 export class TemplateMixinTests
 {
@@ -182,7 +182,7 @@ export class ValidatorApiTransitionTests
         }>(withExtension);
         const numberValidator = validatorFor(number());
         const unknownValidator = validatorFor({ value: number() }).entries.value;
-        const polymorphicValidator: ValidatorAPI<unknown, Pick<Extension, "validationExtension">, Pick<Extension, "objectValidationExtension">> = validatorFor({ value: number() });
+        const polymorphicValidator: ValidationAndParsingAPI<unknown, Pick<Extension, "validationExtension">, Pick<Extension, "objectValidationExtension">> = validatorFor({ value: number() });
 
         assert.strictEqual(numberValidator.validationExtension(), "validation");
         // @ts-expect-error Object validation extensions are unavailable before object narrowing.

@@ -1,6 +1,6 @@
 import * as assert from "node:assert";
 import { array, arrayOf, boolean, number, object, record, recordOf, string, validatorFor, valueOf } from "./schematium.ts";
-import type { ValidatorAPI } from "./schematium.ts";
+import type { ValidationAndParsingAPI } from "./schematium.ts";
 
 export class ReflectionAPITests
 {
@@ -125,7 +125,7 @@ export class ReflectionAPITests
 
 }
 
-export class ValidatorAPITests
+export class ValidationAndParsingAPITests
 {
     promotesSingleValueDefinitionsWithoutRecreatingThem()
     {
@@ -176,8 +176,8 @@ export class ValidatorAPITests
 
     isObjectNarrowsValidatorsWhoseKindIsNotStaticallyKnown()
     {
-        const validator: ValidatorAPI<unknown> = validatorFor({ value: number() });
-        // @ts-expect-error Reflection is composed onto generated validator types, not ValidatorAPI itself.
+        const validator: ValidationAndParsingAPI<unknown> = validatorFor({ value: number() });
+        // @ts-expect-error Reflection is composed onto generated validator types, not ValidationAndParsingAPI itself.
         validator.type;
 
         if (!validator.isObject())

@@ -1,7 +1,7 @@
 import type { CheckAPI, CollectionDefinitionAPI, DefinitionAPI, LiteralType, ObjectDefinitionAPI, PrimitiveType, TemplateObject, TypeOption } from "./definition-interface.ts";
 import type { InferSchemaType, InferTypeDefinitionType } from "./utility-types/inference.ts";
 import type { OptionalEntry, RequiredEntry } from "./utility-types/optionality.ts";
-import type { ObjectValidatorAPI, ValidatorAPI } from "./validator-interface.ts";
+import type { ObjectValidatorAPI, ValidationAndParsingAPI } from "./validation-interface.ts";
 import type { MemberReflectionAPI, ReflectionAPI } from "./reflection-interface.ts";
 import type { TemplateMixin, ValueAPI } from "../template-classes/base.ts";
 
@@ -27,7 +27,7 @@ type GetExtension<Extensions, Group extends PropertyKey, Kind extends PropertyKe
     NonNullable<Extensions[Group]> extends infer ExtensionGroup ?
     Kind extends keyof ExtensionGroup ?
     NonNullable<ExtensionGroup[Kind]> : {} : {} : {};
-type ValueValidator<Value, Extensions> = ValidatorAPI<Value, GetExtension<Extensions, "validationExtensions", "general">, GetExtension<Extensions, "validationExtensions", "object">> & ReflectionAPI & GetExtension<Extensions, "validationExtensions", "general">;
+type ValueValidator<Value, Extensions> = ValidationAndParsingAPI<Value, GetExtension<Extensions, "validationExtensions", "general">, GetExtension<Extensions, "validationExtensions", "object">> & ReflectionAPI & GetExtension<Extensions, "validationExtensions", "general">;
 type MemberValueValidator<Value, Extensions> = ValueValidator<Value, Extensions> & MemberReflectionAPI;
 
 export type ObjectValidatorFor<Template extends TemplateObject, Extensions extends TemplateAPIExtensions = {}> = ObjectValidatorAPI<InferSchemaType<Template>, ValidatorEntriesFor<Template, Extensions>, GetExtension<Extensions, "validationExtensions", "general">, GetExtension<Extensions, "validationExtensions", "object">> & MemberReflectionAPI & GetExtension<Extensions, "validationExtensions", "general"> & GetExtension<Extensions, "validationExtensions", "object">;

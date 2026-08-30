@@ -1,4 +1,4 @@
-import type { ValidationTolerances } from "../../api/validator-interface.ts";
+import type { ValidationTolerances } from "../../api/validation-interface.ts";
 import type { ExpectedType } from "../../api/reflection-interface.ts";
 import type { InternalValueTemplate } from "../../api/interal-interface.ts";
 

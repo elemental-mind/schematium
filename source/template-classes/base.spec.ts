@@ -13,7 +13,7 @@ import
     string,
     ValidationIssue,
     valueOf,
-    type ValidationAPI,
+    type ValidationContext,
 } from "../../tests/util/spec-support.ts";
 
 export class DefaultValueTests
@@ -360,10 +360,10 @@ export class ValidatorTests
 
     acceptsValidator()
     {
-        const t = number().accepts((v: number, validator: ValidationAPI) =>
+        const t = number().accepts((v: number, context: ValidationContext) =>
         {
             if (v <= 0)
-                validator.rejectWith(ValidationIssue, "Value must be positive");
+                context.rejectWith(ValidationIssue, "Value must be positive");
         });
 
         assert.strictEqual(t.check(5), true);
@@ -372,10 +372,10 @@ export class ValidatorTests
 
     validatorReportsCustomMessage()
     {
-        const t = number().accepts((v: number, validator: ValidationAPI) =>
+        const t = number().accepts((v: number, context: ValidationContext) =>
         {
             if (v <= 0)
-                validator.rejectWith(ValidationIssue, "Value must be positive");
+                context.rejectWith(ValidationIssue, "Value must be positive");
         });
 
         const result = t.validate(-1, { mode: "thorough" }) as RejectionResult;
@@ -398,10 +398,10 @@ export class ValidatorTests
 
     acceptsEntriesValidator()
     {
-        const t = arrayOf(number).acceptsEntries((key: string | number, value: number, validator: ValidationAPI) =>
+        const t = arrayOf(number).acceptsEntries((key: string | number, value: number, context: ValidationContext) =>
         {
             if (value < 0)
-                validator.rejectWith(ValidationIssue, `Entry at ${key} must be non-negative`);
+                context.rejectWith(ValidationIssue, `Entry at ${key} must be non-negative`);
         });
 
         assert.strictEqual(t.check([1, 2, 3]), true);
@@ -410,10 +410,10 @@ export class ValidatorTests
 
     acceptsEntriesReportsCustomMessage()
     {
-        const t = arrayOf(number).acceptsEntries((key: string | number, value: number, validator: ValidationAPI) =>
+        const t = arrayOf(number).acceptsEntries((key: string | number, value: number, context: ValidationContext) =>
         {
             if (value < 0)
-                validator.rejectWith(ValidationIssue, `Entry at ${key} must be non-negative`);
+                context.rejectWith(ValidationIssue, `Entry at ${key} must be non-negative`);
         });
 
         const result = t.validate([1, -1], { mode: "thorough" }) as RejectionResult;
@@ -433,10 +433,10 @@ export class ValidatorTests
 
     acceptsEntriesOnRecord()
     {
-        const t = recordOf(string).acceptsEntries((key: string | number, value: string, validator: ValidationAPI) =>
+        const t = recordOf(string).acceptsEntries((key: string | number, value: string, context: ValidationContext) =>
         {
             if (value.length === 0)
-                validator.rejectWith(ValidationIssue, `Entry '${key}' must not be empty`);
+                context.rejectWith(ValidationIssue, `Entry '${key}' must not be empty`);
         });
 
         assert.strictEqual(t.check({ a: "hello", b: "world" }), true);
@@ -447,7 +447,7 @@ export class ValidatorTests
     {
         // If type validation fails, the custom validator should not be called
         let validatorCalled = false;
-        const t = number().accepts((v: number, validator: ValidationAPI) =>
+        const t = number().accepts((v: number, context: ValidationContext) =>
         {
             validatorCalled = true;
         });

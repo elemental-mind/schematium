@@ -1,4 +1,4 @@
-import type { ValidationAPI } from "../../api/definition-interface.ts";
+import type { ValidationContext } from "../../api/definition-interface.ts";
 import type { ExpectedType, MemberReflectionAPI } from "../../api/reflection-interface.ts";
 import type { InternalValueTemplate } from "../../api/interal-interface.ts";
 import type { InferCollectionEntryType } from "../../api/utility-types/inference.ts";
@@ -10,7 +10,7 @@ import { ValueTemplate } from "../base.ts";
 export interface InternalCollectionTemplate<T = any> extends InternalValueTemplate<T>
 {
     acceptsEntries(validator: (key: string | number, value: InferCollectionEntryType<T>) => boolean): this;
-    acceptsEntries(validator: (key: string | number, value: InferCollectionEntryType<T>, validator: ValidationAPI) => void): this;
+    acceptsEntries(validator: (key: string | number, value: InferCollectionEntryType<T>, context: ValidationContext) => void): this;
 }
 
 abstract class CollectionTemplate<T> extends ValueTemplate<T> implements MemberReflectionAPI
@@ -19,7 +19,7 @@ abstract class CollectionTemplate<T> extends ValueTemplate<T> implements MemberR
     protected entryTemplate: InternalValueTemplate<any>;
     protected entryGuard?:
         ((key: string | number, value: InferCollectionEntryType<T>) => boolean) |
-        ((key: string | number, value: InferCollectionEntryType<T>, validator: ValidationAPI) => void);
+        ((key: string | number, value: InferCollectionEntryType<T>, context: ValidationContext) => void);
 
     get memberType(): ExpectedType | readonly ExpectedType[] { return this.entryTemplate.type; }
 
@@ -30,7 +30,7 @@ abstract class CollectionTemplate<T> extends ValueTemplate<T> implements MemberR
     }
 
     acceptsEntries(validator: (key: string | number, value: InferCollectionEntryType<T>) => boolean): this;
-    acceptsEntries(validator: (key: string | number, value: InferCollectionEntryType<T>, validator: ValidationAPI) => void): this;
+    acceptsEntries(validator: (key: string | number, value: InferCollectionEntryType<T>, context: ValidationContext) => void): this;
     acceptsEntries(validator: typeof this.entryGuard)
     {
         this.entryGuard = validator;
