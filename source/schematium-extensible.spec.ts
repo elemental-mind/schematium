@@ -2,7 +2,20 @@ import { Debug } from "unitium";
 import * as assert from "node:assert";
 import { generateTemplateAPI, ValueType } from "./schematium-extensible.ts";
 import { StringTemplate } from "./template-classes/families/primitives.ts";
-import type { TemplateMixin, ValidationAndParsingAPI, ValueTemplateConstructor } from "./schematium-extensible.ts";
+import type { MemberReflectionAPI, ReflectionAPI, TemplateMixin, ValidationAndParsingAPI, ValueTemplateConstructor } from "./schematium-extensible.ts";
+
+export class PublicTypeExportTests
+{
+    exportsReflectionContracts()
+    {
+        const { arrayOf, number, string, validatorFor } = generateTemplateAPI();
+        const reflection: ReflectionAPI = validatorFor(number());
+        const memberReflection: MemberReflectionAPI = validatorFor(arrayOf(string));
+
+        assert.strictEqual(reflection.expects(number), true);
+        assert.strictEqual(memberReflection.expectsMember(string), true);
+    }
+}
 
 export class TemplateMixinTests
 {

@@ -1,10 +1,11 @@
 import * as assert from "assert";
 
 export type { ParseResult, ParseSuccessResult, TemplateObject, ValidationContext, ValidationSettings, ValidationSuccessResult, ValidationTolerances, ValueType } from "../../source/schematium-extensible.ts";
-export { RejectionResult, ValidationIssue, ValidationResult } from "../../source/schematium-extensible.ts";
+export { ValidationIssue } from "../../source/schematium-extensible.ts";
+export { RejectionResult } from "../../source/validation/validation.ts";
 
-import type { ParseResult, ParseSuccessResult, TemplateObject, ValidationSettings, ValidationTolerances, ValueType, } from "../../source/schematium-extensible.ts";
-import { generateTemplateAPI, ValidationResult, } from "../../source/schematium-extensible.ts";
+import type { ParseResult, ParseSuccessResult, TemplateObject, ValidationResult, ValidationSettings, ValidationTolerances, ValueType, } from "../../source/schematium-extensible.ts";
+import { generateTemplateAPI } from "../../source/schematium-extensible.ts";
 
 interface TestValidationAndParsingAPI
 {

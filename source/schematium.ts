@@ -4,8 +4,9 @@ import { generateTemplateAPI } from "./api/api-generator.ts";
 export const { validatorFor, string, number, boolean, object, valueOf, oneOf, record, recordOf, array, arrayOf } = generateTemplateAPI();
 
 //Definition Essentials
-export type { TemplateObject, TypeOption } from "./api/definition-interface.ts";
-export type { ExpectedType, MemberReflectionAPI as MemberReflectionAPI, ReflectionAPI } from "./api/reflection-interface.ts";
+export type { TemplateObject, TypeOption, ValidationContext } from "./api/definition-interface.ts";
+export type { ExpectedType, MemberReflectionAPI, ReflectionAPI } from "./api/reflection-interface.ts";
+export type { ValueType } from "./api/utility-types/inference.ts";
 export type { ValueAPI } from "./template-classes/base.ts";
 
 //Validation Settings

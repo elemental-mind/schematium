@@ -1,6 +1,23 @@
 import * as assert from "node:assert";
 import { array, arrayOf, boolean, number, object, record, recordOf, string, validatorFor, valueOf } from "./schematium.ts";
-import type { ValidationAndParsingAPI } from "./schematium.ts";
+import type { MemberReflectionAPI, ReflectionAPI, ValidationAndParsingAPI, ValidationContext, ValueType } from "./schematium.ts";
+
+export class PublicTypeExportTests
+{
+    exportsConsumerFacingUtilityAndReflectionTypes()
+    {
+        const numberValidator = validatorFor(number());
+        const reflection: ReflectionAPI = numberValidator;
+        const memberReflection: MemberReflectionAPI = validatorFor(arrayOf(string));
+        const rejectWith: ValidationContext["rejectWith"] = () => undefined;
+        const reflectedValue: ValueType<typeof numberValidator> = 42;
+
+        assert.strictEqual(reflection.expects(number), true);
+        assert.strictEqual(memberReflection.expectsMember(string), true);
+        assert.strictEqual(typeof rejectWith, "function");
+        assert.strictEqual(reflectedValue, 42);
+    }
+}
 
 export class ReflectionAPITests
 {

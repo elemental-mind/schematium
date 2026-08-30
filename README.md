@@ -73,6 +73,7 @@ import {
   string,
   valueOf, // variadics
 } from "schematium";
+import type { ValueType } from "schematium";
 
 //You can define sub templates
 const PostTemplate = {
@@ -87,6 +88,8 @@ const UserConfig = validatorFor({
   tags: arrayOf(string).withDefault([]), // optional (has default)
   posts: recordOf(PostTemplate).withDefault({}), // optional (has default)
 });
+
+type UserConfigValue = ValueType<typeof UserConfig>;
 
 UserConfig.check({
   name: "Ada",
@@ -320,7 +323,9 @@ this keeps the failure inside the validation pipeline and lets the caller handle
 it as a normal `RejectionResult`:
 
 ```ts
-const Port = number().accepts((value, context) => {
+import type { ValidationContext } from "schematium";
+
+const Port = number().accepts((value, context: ValidationContext) => {
   if (!(value > 0 && value < 65536)) {
     context.rejectWith(ValidationIssue, "Port out of range");
   }
