@@ -44,6 +44,8 @@ template.validate(
 - **Fast by default** — validation short-circuits on the first failure for hot
   paths, but you can switch into a mode that collects every issue with
   path-traced `ValidationIssue`s using `{ mode: "thorough" }`.
+- **JSON Schema export** — `validator.toJSONSchema()` derives a draft 2020-12
+  JSON Schema from the same definition, e.g. for API docs or tool definitions.
 - **Zero dependencies** at runtime.
 - **Extensible** — mix custom behavior into the built-in template base via
   `generateTemplateAPI(mixin)`.
@@ -336,6 +338,84 @@ If you only need a yes/no decision and don't care about issue detail, prefer the
 boolean-returning form (`accepts((value) => true | false)`), which keeps your
 callback simple and works in both validation modes.
 
+## JSON Schema
+
+`toJSONSchema()` derives a [JSON Schema](https://json-schema.org/) (draft
+2020-12) document from any validator, including member validators reached
+through `entries`:
+
+```ts
+const User = validatorFor({
+  name: string("anonymous"),
+  age: number().accepts((n) => n >= 0),
+  role: oneOf("admin", "user"),
+  tags: arrayOf(string).withDefault([]),
+});
+
+User.toJSONSchema();
+```
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string", "default": "anonymous" },
+    "age": { "type": "number" },
+    "role": { "type": "string", "enum": ["admin", "user"] },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  },
+  "required": ["age", "role"],
+  "additionalProperties": false
+}
+```
+
+The schema describes the values `validator.check(value, tolerances)` accepts.
+Custom `accepts(...)` and `acceptsEntries(...)` callbacks cannot be expressed in
+JSON Schema and are left out, so the exported schema may be looser than the
+validator, but never stricter.
+
+| Definition                                  | JSON Schema                                                                                      |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `string()`, `number()`, `boolean()`         | `{ "type": "string" }`, `{ "type": "number" }`, `{ "type": "boolean" }`                          |
+| literal `"created"` or `1`                  | `{ "type": "string", "const": "created" }`                                                       |
+| `oneOf("a", "b")`                           | `{ "type": "string", "enum": ["a", "b"] }` (`type` only when all values share one)               |
+| `valueOf(A, B)`                             | `{ "anyOf": [A, B] }`                                                                            |
+| `{...}` / `object({...})`                   | `"type": "object"` with `properties`, `required` (non-optional members), `additionalProperties: false` |
+| `arrayOf(X)` / `array([...])`               | `{ "type": "array", "items": X }`                                                                |
+| `recordOf(X)` / `record({...})`             | `{ "type": "object", "additionalProperties": X }`                                                |
+| defaults (`string("x")`, `.withDefault(v)`) | `"default": v`; objects only export an explicit `.withDefault(...)`, not member-derived defaults  |
+| `.optional` / `.required`                   | the containing object's `required` list                                                         |
+
+`valueOf(...)` exports `anyOf` rather than `oneOf`, because Schematium accepts a
+value when _any_ alternative matches, while JSON Schema's `oneOf` rejects values
+that match more than one.
+
+### Tolerances
+
+`toJSONSchema(tolerances?)` accepts the same `ValidationTolerances` as `check`:
+
+- `allowPartial: true` drops every `required` list. The result describes the
+  patches `patchOrOverride(...)` accepts.
+- `allowUnknowns: true` drops `additionalProperties: false` from shaped objects.
+
+```ts
+User.toJSONSchema({ allowPartial: true });
+```
+
+### Embedding and recursion
+
+Only the root carries `$schema`. To embed the schema in another document, such as
+an OpenAPI 3.1 component, drop it:
+
+```ts
+const { $schema, ...schema } = User.toJSONSchema();
+```
+
+A template object that contains itself is exported as a `$ref` to its enclosing
+occurrence (`{ "$ref": "#" }` for the root) instead of recursing. A template
+reused in several places without a cycle is inlined at each place.
+
 ## Interfaces
 
 ### Definition API
@@ -373,13 +453,17 @@ Every value template supports these chainable modifiers:
   `undefined` when no default exists.
 - `template.patchOrOverride(base, patch)` — validates a partial patch and
   recursively merges it into `base`, using schema defaults for missing members.
+- `template.toJSONSchema(tolerances?)` — returns a JSON Schema document
+  describing the values `check(value, tolerances)` accepts. See
+  [JSON Schema](#json-schema).
 
 `parseString` is particularly useful for CLI arguments and environment
 variables, which always arrive as strings. Variadic alternatives are tried by
 their built-in parsing priority, not the order passed to `valueOf(...)`:
 `number` first, then `boolean`, then JSON-parsed arrays/records, then strings.
 Thus `valueOf(string, number)` parses `"42"` as `42`, while `"hello"` remains a
-string.
+string. The first parsed value that the whole validator accepts wins, so a value
+rejected by an `accepts(...)` callback falls through to the next alternative.
 
 ## Types overview
 
@@ -523,6 +607,8 @@ import type {
   TemplateMixin, // function that extends the built-in template base
   ValueTemplateConstructor, // constructor received by a template mixin
   ValueType, // extract the value type from a definition
+  JSONSchema, // output of toJSONSchema()
+  JSONSchemaContext, // context passed to buildJSONSchema() overrides
 } from "schematium/extensible";
 ```
 
@@ -705,6 +791,47 @@ valueOf(number, string)
 This is the recommended way to build reusable helpers (custom validators,
 formatters, telemetry tags, etc.) that stay fully type-safe across every kind of
 template.
+
+### Enriching JSON Schema output
+
+Each template builds its part of the JSON Schema in
+`buildJSONSchema(context)`. Override it in a mixin and call `super` to add
+keywords such as `description`, `format`, or `minimum`:
+
+```ts
+import {
+  generateTemplateAPI,
+  type JSONSchema,
+  type JSONSchemaContext,
+  type ValueTemplateConstructor,
+} from "schematium/extensible";
+
+function withDescriptions(Base: ValueTemplateConstructor) {
+  return class extends Base {
+    description?: string;
+    describe(description: string): this {
+      this.description = description;
+      return this;
+    }
+    buildJSONSchema(context: JSONSchemaContext): JSONSchema {
+      const schema = super.buildJSONSchema(context);
+      return this.description ? { ...schema, description: this.description } : schema;
+    }
+  };
+}
+
+type Describable = InstanceType<ReturnType<typeof withDescriptions>>;
+
+const { validatorFor, string } = generateTemplateAPI<{
+  definitionExtensions: { general: Describable };
+}>(withDescriptions);
+
+validatorFor({ name: string().describe("Display name") }).toJSONSchema();
+// properties.name → { "type": "string", "description": "Display name" }
+```
+
+`context.allowPartial` and `context.allowUnknowns` expose the tolerances the
+schema is being exported with.
 
 ## License
 
