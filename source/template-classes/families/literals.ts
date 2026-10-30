@@ -1,6 +1,7 @@
 import type { LiteralType } from "../../api/definition-interface.ts";
 import type { ExpectedType } from "../../api/reflection-interface.ts";
 import type { InternalValueTemplate } from "../../api/interal-interface.ts";
+import type { JSONSchema, JSONSchemaContext } from "../../json-schema/json-schema.ts";
 import type { Validator } from "../../validation/validation.ts";
 
 import { TypeMismatch } from "../../validation/validation.ts";
@@ -52,5 +53,10 @@ export class LiteralTemplate<T extends LiteralType> extends ValueTemplate<T>
     expectsExclusively(type: ExpectedType): boolean
     {
         return this.permittedValueTemplate.expectsExclusively(type);
+    }
+
+    buildJSONSchema(context: JSONSchemaContext): JSONSchema
+    {
+        return { ...this.permittedValueTemplate.buildJSONSchema(context), const: this.permittedValue, ...super.buildJSONSchema(context) };
     }
 }

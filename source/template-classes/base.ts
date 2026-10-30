@@ -2,9 +2,11 @@ import type { CheckAPI, DefaultsAPI, ValidationContext } from "../api/definition
 import type { ExpectedType, ReflectionAPI } from "../api/reflection-interface.ts";
 import type { ObjectValidatorAPI, ValidationAndParsingAPI, ValidationSettings, ValidationTolerances, ValidatorEntries } from "../api/validation-interface.ts";
 import type { ParseResult, ValidationResult } from "../validation/validation.ts";
+import type { JSONSchema } from "../json-schema/json-schema.ts";
 import type { TemplateRegistry } from "./registry.ts";
 
 import { ParseError, ParseSuccessResult, TypeMismatch, UndefinedValue, ValidationIssue, Validator } from "../validation/validation.ts";
+import { JSONSchemaContext } from "../json-schema/json-schema.ts";
 import type { InternalValueTemplate } from "../api/interal-interface.ts";
 
 export type ValueTemplateConstructor = new (...args: any[]) => InternalValueTemplate<any>;
@@ -140,10 +142,14 @@ export abstract class ValueTemplate<T> implements ValidationAndParsingAPI<T>, Re
         if (validator.issueCount !== this.validateType(value, validator).issueCount)
             return validator;
 
-        if (this.customValidator?.(value as T, validator) === false)
-            validator.rejectWith(ValidationIssue, "Custom validation failed");
+        return this.validateCustom(value, validator);
+    }
 
-        return validator;
+    protected validateCustom(value: unknown, validator: Validator): Validator
+    {
+        return this.customValidator?.(value as T, validator) === false
+            ? validator.rejectWith(ValidationIssue, "Custom validation failed")
+            : validator;
     }
 
     validateType(value: unknown, validator: Validator): Validator
@@ -170,6 +176,16 @@ export abstract class ValueTemplate<T> implements ValidationAndParsingAPI<T>, Re
     merge(base: any, checkedPatch: any): any
     {
         return checkedPatch;
+    }
+
+    toJSONSchema(tolerances: ValidationTolerances = {}): JSONSchema
+    {
+        return { $schema: JSONSchemaContext.dialect, ...new JSONSchemaContext(tolerances).buildSchema(this) };
+    }
+
+    buildJSONSchema(context: JSONSchemaContext): JSONSchema
+    {
+        return this.default === undefined ? {} : { default: structuredClone(this.default) };
     }
 
     getUniqueTypes(templates: readonly InternalValueTemplate<any>[]): ExpectedType[]

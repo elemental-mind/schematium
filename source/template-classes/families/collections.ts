@@ -2,6 +2,7 @@ import type { ValidationContext } from "../../api/definition-interface.ts";
 import type { ExpectedType, MemberReflectionAPI } from "../../api/reflection-interface.ts";
 import type { InternalValueTemplate } from "../../api/interal-interface.ts";
 import type { InferCollectionEntryType } from "../../api/utility-types/inference.ts";
+import type { JSONSchema, JSONSchemaContext } from "../../json-schema/json-schema.ts";
 import type { Validator } from "../../validation/validation.ts";
 
 import { TypeMismatch, ValidationIssue } from "../../validation/validation.ts";
@@ -86,6 +87,11 @@ export class RecordTemplate<T> extends CollectionTemplate<Record<string, T>>
 
         return validator;
     }
+
+    buildJSONSchema(context: JSONSchemaContext): JSONSchema
+    {
+        return { type: "object", additionalProperties: context.buildSchema(this.entryTemplate, "additionalProperties"), ...super.buildJSONSchema(context) };
+    }
 }
 
 export class ArrayTemplate<T> extends CollectionTemplate<T[]>
@@ -111,5 +117,10 @@ export class ArrayTemplate<T> extends CollectionTemplate<T[]>
             if (!this.validateEntry(key, entry, validator).continueValidating) break;
 
         return validator;
+    }
+
+    buildJSONSchema(context: JSONSchemaContext): JSONSchema
+    {
+        return { type: "array", items: context.buildSchema(this.entryTemplate, "items"), ...super.buildJSONSchema(context) };
     }
 }

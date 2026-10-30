@@ -1,5 +1,6 @@
 import type { ValueAPI } from "../template-classes/base.ts";
 import type { ParseResult, ValidationResult } from "../validation/validation.ts";
+import type { JSONSchema } from "../json-schema/json-schema.ts";
 import type { DeepPartial } from "./utility-types/optionality.ts";
 
 export type ValidatorEntries<ValidationExtension = {}, ObjectValidationExtension = {}> = Readonly<Record<string, ValidationAndParsingAPI<any, ValidationExtension, ObjectValidationExtension> & ValidationExtension>>;
@@ -13,6 +14,7 @@ export interface ValidationAndParsingAPI<T, ValidationExtension = {}, ObjectVali
     parseString(value: string, settings?: ValidationSettings): ParseResult<T>;
     getDefault(): Partial<T> | undefined;
     patchOrOverride(base: DeepPartial<T>, patch: DeepPartial<T>): DeepPartial<T>;
+    toJSONSchema(tolerances?: ValidationTolerances): JSONSchema;
 }
 
 export interface ObjectValidatorAPI<T extends object, Entries extends ValidatorEntries<any, any> = ValidatorEntries, ValidationExtension = {}, ObjectValidationExtension = {}> extends ValidationAndParsingAPI<T, ValidationExtension, ObjectValidationExtension>

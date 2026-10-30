@@ -15,3 +15,5 @@ export type { ObjectValidatorAPI, ValidationAndParsingAPI, ValidationSettings, V
 export type { ValidationResult, ParseResult, ValidationSuccessResult, ParseSuccessResult, RejectionResult } from "./validation/validation.ts";
 //Validation & Parsing Errors/Issue Types
 export { ValidationIssue, ParseError, TypeMismatch, MissingMember, UndefinedValue, UnknownMember, UnknownValue } from "./validation/validation.ts";
+//JSON Schema Export
+export type { JSONSchema } from "./json-schema/json-schema.ts";

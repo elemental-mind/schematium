@@ -1,6 +1,7 @@
 import type { TemplateObject, TypeOption } from "../../api/definition-interface.ts";
 import type { ExpectedType, MemberReflectionAPI } from "../../api/reflection-interface.ts";
 import type { InternalValueTemplate } from "../../api/interal-interface.ts";
+import type { JSONSchema, JSONSchemaContext } from "../../json-schema/json-schema.ts";
 
 import { MissingMember, TypeMismatch, UnknownMember, Validator } from "../../validation/validation.ts";
 import { ValueTemplate } from "../base.ts";
@@ -107,6 +108,27 @@ export class ObjectTemplate<T> extends ValueTemplate<T> implements MemberReflect
                     break;
 
         return validator;
+    }
+
+    buildJSONSchema(context: JSONSchemaContext): JSONSchema
+    {
+        const properties: Array<[string, JSONSchema]> = [];
+        const required: string[] = [];
+
+        for (const [key, template] of Object.entries(this.entries))
+        {
+            properties.push([key, context.buildSchema(template, "properties", key)]);
+            if (!(template.isOptional || context.allowPartial))
+                required.push(key);
+        }
+
+        const schema: JSONSchema = { type: "object", properties: Object.fromEntries(properties) };
+        if (required.length)
+            schema.required = required;
+        if (!context.allowUnknowns && this.strict)
+            schema.additionalProperties = false;
+
+        return { ...schema, ...super.buildJSONSchema(context) };
     }
 
     merge(base: any, override: any): any

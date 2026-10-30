@@ -1,4 +1,5 @@
 import type { ExpectedType } from "../../api/reflection-interface.ts";
+import type { JSONSchema, JSONSchemaContext } from "../../json-schema/json-schema.ts";
 
 import { ParseError, Validator } from "../../validation/validation.ts";
 import { ValueTemplate } from "../base.ts";
@@ -23,6 +24,11 @@ export class StringTemplate extends ValueTemplate<string>
     identifiesBaseType(value: unknown): boolean
     {
         return typeof value === "string";
+    }
+
+    buildJSONSchema(context: JSONSchemaContext): JSONSchema
+    {
+        return { type: "string", ...super.buildJSONSchema(context) };
     }
 }
 
@@ -50,6 +56,11 @@ export class NumberTemplate extends ValueTemplate<number>
     {
         return typeof value === "number" && Number.isFinite(value);
     }
+
+    buildJSONSchema(context: JSONSchemaContext): JSONSchema
+    {
+        return { type: "number", ...super.buildJSONSchema(context) };
+    }
 }
 
 export class BooleanTemplate extends ValueTemplate<boolean>
@@ -76,5 +87,10 @@ export class BooleanTemplate extends ValueTemplate<boolean>
     identifiesBaseType(value: unknown): boolean
     {
         return typeof value === "boolean";
+    }
+
+    buildJSONSchema(context: JSONSchemaContext): JSONSchema
+    {
+        return { type: "boolean", ...super.buildJSONSchema(context) };
     }
 }

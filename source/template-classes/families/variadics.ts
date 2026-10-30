@@ -1,9 +1,11 @@
 import type { ValidationTolerances } from "../../api/validation-interface.ts";
 import type { ExpectedType } from "../../api/reflection-interface.ts";
 import type { InternalValueTemplate } from "../../api/interal-interface.ts";
+import type { JSONSchema, JSONSchemaContext } from "../../json-schema/json-schema.ts";
 
 import { ParseError, UnknownValue, Validator } from "../../validation/validation.ts";
 import { ValueTemplate } from "../base.ts";
+import { LiteralTemplate } from "./literals.ts";
 
 type IterableValue<T> = T extends Iterable<infer Entry> ? Entry : never;
 type FilterMatch<Variant, Result> = { input: Variant; result: Result; };
@@ -51,7 +53,9 @@ export class VariadicTemplate<T> extends ValueTemplate<T>
             parsedTemplatePairs,
             validator,
             true,
-            (pair, filterValidator) => pair.template.validateWithValidator(pair.parsedValue, filterValidator),
+            (pair, filterValidator) => pair.template.validateWithValidator(pair.parsedValue, filterValidator).issueCount
+                ? filterValidator
+                : this.validateCustom(pair.parsedValue, filterValidator),
         );
 
         if (validatedPairs.length)
@@ -101,7 +105,7 @@ export class VariadicTemplate<T> extends ValueTemplate<T>
             candidateTypes,
             validator,
             true,
-            (candidate, filterValidator) => candidate.validateType(value, filterValidator),
+            (candidate, filterValidator) => candidate.validateWithValidator(value, filterValidator),
         );
 
         return validatedTypes.length
@@ -116,6 +120,22 @@ export class VariadicTemplate<T> extends ValueTemplate<T>
         const commonType = validatedBaseTypes.find(baseType => validatedOverrideTypes.includes(baseType));
 
         return commonType ? commonType.merge(base, override) : override;
+    }
+
+    buildJSONSchema(context: JSONSchemaContext): JSONSchema
+    {
+        const branches = this.permittedTypes.map((template, index) => context.buildSchema(template, "anyOf", index));
+        const isLiteralUnion = this.permittedTypes.every(template => template instanceof LiteralTemplate);
+
+        return { ...(isLiteralUnion ? this.mergeLiteralBranches(branches) : { anyOf: branches }), ...super.buildJSONSchema(context) };
+    }
+
+    private mergeLiteralBranches(branches: JSONSchema[]): JSONSchema
+    {
+        const values = branches.map(branch => branch.const!);
+        const types = new Set(branches.map(branch => branch.type));
+
+        return types.size === 1 ? { type: branches[0].type, enum: values } : { enum: values };
     }
 
     private findMatchingTypes(value: unknown): InternalValueTemplate<any>[]

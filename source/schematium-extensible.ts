@@ -15,3 +15,5 @@ export type { DeepPartial } from "./api/utility-types/optionality.ts";
 export type { ParseResult, ParseSuccessResult, RejectionResult, ValidationResult, ValidationSuccessResult } from "./validation/validation.ts";
 // Validation and parsing issue types
 export { MissingMember, ParseError, TypeMismatch, UndefinedValue, UnknownMember, UnknownValue, ValidationIssue } from "./validation/validation.ts";
+// JSON Schema export and the context passed to buildJSONSchema overrides
+export type { JSONSchema, JSONSchemaContext } from "./json-schema/json-schema.ts";

@@ -7,7 +7,7 @@ import { ObjectTemplate } from "./families/objects.ts";
 import { BooleanTemplate, NumberTemplate, StringTemplate } from "./families/primitives.ts";
 import { VariadicTemplate } from "./families/variadics.ts";
 import { LiteralTemplate } from "./families/literals.ts";
-import { InternalValueTemplate } from "../api/interal-interface.ts";
+import type { InternalValueTemplate } from "../api/interal-interface.ts";
 
 /** Owns one mutually-compatible family of template classes and its resolution rules. */
 export class TemplateRegistry
