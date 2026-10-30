@@ -13,13 +13,13 @@ type FilterMatch<Variant, Result> = { input: Variant; result: Result; };
 export interface InternalVariadicTemplate<T = any> extends InternalValueTemplate<T>
 {
     permittedTypes: InternalValueTemplate<any>[];
-    parseStrategyGroups?: Map<InternalValueTemplate<any>["parseIntoRawType"], InternalValueTemplate<any>[]>;
+    parseStrategyGroups?: Map<InternalValueTemplate<any>["parseStrategy"], InternalValueTemplate<any>[]>;
 }
 
 export class VariadicTemplate<T> extends ValueTemplate<T>
 {
     public permittedTypes: InternalValueTemplate<any>[];
-    public parseStrategyGroups?: Map<InternalValueTemplate<any>["parseIntoRawType"], InternalValueTemplate<any>[]>;
+    public parseStrategyGroups?: Map<InternalValueTemplate<any>["parseStrategy"], InternalValueTemplate<any>[]>;
 
     get type(): readonly ExpectedType[]
     {
@@ -178,7 +178,7 @@ export class VariadicTemplate<T> extends ValueTemplate<T>
     {
         this.parseStrategyGroups = new Map();
         for (const template of this.permittedTypes)
-            this.parseStrategyGroups.get(template.parseIntoRawType)?.push(template) ??
-                this.parseStrategyGroups.set(template.parseIntoRawType, [template]);
+            this.parseStrategyGroups.get(template.parseStrategy)?.push(template) ??
+                this.parseStrategyGroups.set(template.parseStrategy, [template]);
     }
 }

@@ -1,5 +1,5 @@
 import * as assert from "node:assert";
-import { arrayOf, boolean, number, oneOf, string, valueOf, ValidationIssue, assertParseSuccess, withoutDialect, type ValidationContext } from "../../../tests/util/spec-support.ts";
+import { arrayOf, boolean, number, oneOf, recordOf, string, valueOf, ValidationIssue, assertParseSuccess, countJSONParseCalls, withoutDialect, type ValidationContext } from "../../../tests/util/spec-support.ts";
 
 export class VariadicDefinitionTests
 {
@@ -162,6 +162,27 @@ export class VariadicObjectDiscernmentTests
         assertParseSuccess(t.parseString('{"width":10}'), { width: 10 });
     }
 
+    objectShapesShareOneJSONParse()
+    {
+        const t = valueOf(
+            { radius: number() },
+            { width: number(), height: number() },
+            { sku: string(), price: number() }
+        );
+
+        const calls = countJSONParseCalls(() => assertParseSuccess(t.parseString('{"sku":"A","price":1}'), { sku: "A", price: 1 }));
+        assert.strictEqual(calls, 1, "expected all object shapes to share one JSON.parse");
+    }
+
+    objectsAndCollectionsShareOneJSONParseAmongOtherAlternatives()
+    {
+        const t = valueOf({ id: number() }, arrayOf(number), recordOf(string), number, boolean, string, "auto", 1);
+
+        assert.strictEqual(countJSONParseCalls(() => assertParseSuccess(t.parseString('{"id":7}'), { id: 7 })), 1, "expected one JSON.parse for an object");
+        assert.strictEqual(countJSONParseCalls(() => assertParseSuccess(t.parseString("[1,2,3]"), [1, 2, 3])), 1, "expected one JSON.parse for an array");
+        assert.strictEqual(countJSONParseCalls(() => assertParseSuccess(t.parseString('{"name":"x"}'), { name: "x" })), 1, "expected one JSON.parse for a record");
+    }
+
     typeDifferenceDiscriminatesObjects()
     {
         const t = valueOf(
@@ -297,6 +318,59 @@ export class VariadicCustomValidatorTests
 
         assertParseSuccess(t.parseString("5"), 5);
         assertParseSuccess(t.parseString("-1"), "-1");
+    }
+}
+
+// ============================================================
+// Literals parse like their primitive and take its priority,
+// so number literals are tried before string literals
+// ============================================================
+
+export class VariadicLiteralParsingTests
+{
+    mixedTypeLiteralsParseWithTheirOwnPrimitive()
+    {
+        assertParseSuccess(oneOf("a", 1).parseString("1"), 1);
+        assertParseSuccess(oneOf("a", 1).parseString("a"), "a");
+        assertParseSuccess(oneOf(1, "a").parseString("a"), "a");
+        assertParseSuccess(oneOf(1, "a").parseString("1"), 1);
+    }
+
+    mixedTypeLiteralsCheckByType()
+    {
+        assert.strictEqual(oneOf("a", 1).check(1), true);
+        assert.strictEqual(oneOf("a", 1).check("1"), false);
+    }
+
+    numberLiteralParsesBeforeStringType()
+    {
+        const t = valueOf("a", 1, string);
+
+        assertParseSuccess(t.parseString("1"), 1);
+        assertParseSuccess(t.parseString("a"), "a");
+        assertParseSuccess(t.parseString("2"), "2");
+    }
+
+    sameTypeLiteralUnionsStillParse()
+    {
+        assertParseSuccess(oneOf("x", "y").parseString("y"), "y");
+        assertParseSuccess(oneOf(1, 2).parseString("2"), 2);
+        assert.strictEqual(oneOf("x", "y").parseString("z").success, false);
+        assert.strictEqual(oneOf(1, 2).parseString("3").success, false);
+    }
+
+    numberLiteralWinsOverEqualStringLiteralRegardlessOfOrder()
+    {
+        assertParseSuccess(oneOf("1", 1).parseString("1"), 1);
+        assertParseSuccess(oneOf(1, "1").parseString("1"), 1);
+    }
+
+    literalMixedWithItsOwnPrimitiveParses()
+    {
+        assertParseSuccess(valueOf(1, number).parseString("1"), 1);
+        assertParseSuccess(valueOf(1, number).parseString("2"), 2);
+        assertParseSuccess(valueOf("a", string).parseString("b"), "b");
+        assert.strictEqual(valueOf(1, number).parseString("x").success, false);
     }
 }
 

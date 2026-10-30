@@ -56,3 +56,16 @@ export function assertParseSuccess<T>(result: ParseResult<T>, expectedValue: T):
         throw error;
     }
 }
+
+/** Runs a synchronous action and returns how often it called `JSON.parse`. */
+export function countJSONParseCalls(action: () => void): number
+{
+    const originalParse = JSON.parse;
+    let calls = 0;
+    JSON.parse = (...args: Parameters<typeof JSON.parse>) => { calls++; return originalParse(...args); };
+
+    try { action(); }
+    finally { JSON.parse = originalParse; }
+
+    return calls;
+}

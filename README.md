@@ -462,8 +462,11 @@ variables, which always arrive as strings. Variadic alternatives are tried by
 their built-in parsing priority, not the order passed to `valueOf(...)`:
 `number` first, then `boolean`, then JSON-parsed arrays/records, then strings.
 Thus `valueOf(string, number)` parses `"42"` as `42`, while `"hello"` remains a
-string. The first parsed value that the whole validator accepts wins, so a value
-rejected by an `accepts(...)` callback falls through to the next alternative.
+string. Literals share their primitive's priority, so `oneOf("auto", 0)` parses
+`"0"` as `0`, and `oneOf("1", 1)` parses `"1"` as the number `1` whichever
+literal is listed first. The first parsed value that the whole validator
+accepts wins, so a value rejected by an `accepts(...)` callback falls through to
+the next alternative.
 
 ## Types overview
 

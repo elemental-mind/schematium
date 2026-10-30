@@ -10,10 +10,12 @@ import { ValueTemplate } from "../base.ts";
 
 export class LiteralTemplate<T extends LiteralType> extends ValueTemplate<T>
 {
+    declare readonly matchingPriority: number;
     permittedValue: T;
     permittedValueTemplate: InternalValueTemplate<T>;
 
     get type(): ExpectedType | readonly ExpectedType[] { return this.permittedValueTemplate.type; }
+    get parseStrategy(): InternalValueTemplate<T>["parseIntoRawType"] { return this.permittedValueTemplate.parseStrategy; }
 
     constructor(permittedValue: T)
     {
@@ -26,6 +28,9 @@ export class LiteralTemplate<T extends LiteralType> extends ValueTemplate<T>
 
         if (!isPrimitiveTemplate)
             throw new Error("Only numbers, booleans or strings permitted as literal types");
+
+        // A literal parses like its primitive, so it also takes the primitive's place in variadic parse priority.
+        this.matchingPriority = this.permittedValueTemplate.matchingPriority;
     }
 
     parseIntoRawType(value: string, validator: Validator): T | undefined

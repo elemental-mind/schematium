@@ -109,6 +109,12 @@ export abstract class ValueTemplate<T> implements ValidationAndParsingAPI<T>, Re
     abstract parseIntoRawType(value: string, validator: Validator): T | undefined;
     abstract identifiesBaseType(value: unknown): boolean;
 
+    // Variadics parse once per strategy and share the result, so templates reporting the same strategy must parse every input identically.
+    get parseStrategy(): InternalValueTemplate<T>["parseIntoRawType"]
+    {
+        return this.parseIntoRawType;
+    }
+
     parseObject(value: string, validator: Validator): T | undefined
     {
         let result: T | undefined;

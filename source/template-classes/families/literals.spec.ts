@@ -1,5 +1,5 @@
 import * as assert from "node:assert";
-import { oneOf, RejectionResult, validatorFor, assertParseSuccess, withoutDialect } from "../../../tests/util/spec-support.ts";
+import { number, oneOf, RejectionResult, string, validatorFor, assertParseSuccess, withoutDialect } from "../../../tests/util/spec-support.ts";
 
 export class OneOfDefinitionTests
 {
@@ -105,6 +105,11 @@ export class OneOfDefinitionTests
         assert.strictEqual(t.check("1"), false);
         assert.strictEqual(t.check("no"), false);
     }
+
+    mixedLiteralTypesReflectInParsePriority()
+    {
+        assert.deepStrictEqual(validatorFor(oneOf("yes", 1)).type, [number, string]);
+    }
 }
 
 export class LiteralJSONSchemaTests
@@ -126,7 +131,8 @@ export class LiteralJSONSchemaTests
 
     mixedTypeOneOfExportsAnUntypedEnum()
     {
-        assert.deepStrictEqual(withoutDialect(oneOf("yes", 1).toJSONSchema()), { enum: ["yes", 1] });
+        // Enum order follows parse priority, so number literals precede string literals
+        assert.deepStrictEqual(withoutDialect(oneOf("yes", 1).toJSONSchema()), { enum: [1, "yes"] });
     }
 
     oneOfDefaultsBecomeSchemaDefaults()

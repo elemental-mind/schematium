@@ -96,6 +96,22 @@ export class TemplateMixinTests
         assert.strictEqual(instanceCount, 2, "Both the collection and its inferred entry template should use the mixin");
     }
 
+    parseOverridesShouldApplyToMixedTypeLiterals()
+    {
+        const withTrimming: TemplateMixin = Base => class extends Base
+        {
+            parseIntoRawType(value: string, validator: any) { return super.parseIntoRawType(value.trim(), validator); }
+        };
+
+        const { oneOf, validatorFor } = generateTemplateAPI(withTrimming);
+        const t = validatorFor(oneOf("a", 1));
+        const parsedString = t.parseString(" a ");
+        const parsedNumber = t.parseString(" 1 ");
+
+        assert.strictEqual(parsedString.success && parsedString.value, "a");
+        assert.strictEqual(parsedNumber.success && parsedNumber.value, 1);
+    }
+
     objectTemplateCachesShouldBeIsolatedByClassFamily()
     {
         const firstMixedBases: ValueTemplateConstructor[] = [];

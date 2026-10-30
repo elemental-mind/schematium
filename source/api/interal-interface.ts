@@ -15,6 +15,7 @@ export interface InternalValueTemplate<T = any> extends ReflectionAPI
     withDefault(defaultValue: T, cloneWhenAssigned?: boolean): any;
     parseWithValidation(value: string, validator: Validator): T | undefined;
     parseIntoRawType(value: string, validator: Validator): T | undefined;
+    readonly parseStrategy: InternalValueTemplate<T>["parseIntoRawType"];
     parseObject(value: string, validator: Validator): T | undefined;
     identifiesBaseType(value: unknown): boolean;
     check(value: unknown, settings?: ValidationTolerances): value is T;
