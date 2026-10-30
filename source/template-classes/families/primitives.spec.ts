@@ -1,5 +1,5 @@
 import * as assert from "node:assert";
-import { number, string, boolean, assertParseSuccess } from "../../../tests/util/spec-support.ts";
+import { number, string, boolean, assertParseSuccess, withoutDialect } from "../../../tests/util/spec-support.ts";
 
 export class PrimitiveDefnitionTests
 {
@@ -72,5 +72,28 @@ export class PrimitiveDefnitionTests
     {
         const t = boolean();
         assert.strictEqual(t.parseString("yes").success, false);
+    }
+}
+
+export class PrimitiveJSONSchemaTests
+{
+    primitivesExportTheirJSONType()
+    {
+        assert.deepStrictEqual(withoutDialect(string().toJSONSchema()), { type: "string" });
+        assert.deepStrictEqual(withoutDialect(number().toJSONSchema()), { type: "number" });
+        assert.deepStrictEqual(withoutDialect(boolean().toJSONSchema()), { type: "boolean" });
+    }
+
+    primitiveDefaultsBecomeSchemaDefaults()
+    {
+        assert.deepStrictEqual(withoutDialect(string("anonymous").toJSONSchema()), { type: "string", default: "anonymous" });
+        assert.deepStrictEqual(withoutDialect(number(8080).toJSONSchema()), { type: "number", default: 8080 });
+        assert.deepStrictEqual(withoutDialect(boolean(false).toJSONSchema()), { type: "boolean", default: false });
+    }
+
+    customPredicatesAreOmitted()
+    {
+        const t = number().accepts((v: number) => v > 0);
+        assert.deepStrictEqual(withoutDialect(t.toJSONSchema()), { type: "number" });
     }
 }

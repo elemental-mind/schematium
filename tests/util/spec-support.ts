@@ -4,7 +4,7 @@ export type { ParseResult, ParseSuccessResult, TemplateObject, ValidationContext
 export { ValidationIssue } from "../../source/schematium-extensible.ts";
 export { RejectionResult } from "../../source/validation/validation.ts";
 
-import type { ParseResult, ParseSuccessResult, TemplateObject, ValidationResult, ValidationSettings, ValidationTolerances, ValueType, } from "../../source/schematium-extensible.ts";
+import type { JSONSchema, ParseResult, ParseSuccessResult, TemplateObject, ValidationResult, ValidationSettings, ValidationTolerances, ValueType, } from "../../source/schematium-extensible.ts";
 import { generateTemplateAPI } from "../../source/schematium-extensible.ts";
 
 interface TestValidationAndParsingAPI
@@ -15,6 +15,7 @@ interface TestValidationAndParsingAPI
     parseString(value: string, settings?: ValidationSettings): ParseResult<ValueType<this>>;
     getDefault(): Partial<ValueType<this>> | undefined;
     patchOrOverride(base: ValueType<this>, patch: any): ValueType<this>;
+    toJSONSchema(tolerances?: ValidationTolerances): JSONSchema;
 }
 
 export const {
@@ -31,6 +32,13 @@ export const {
     arrayOf,
 } = generateTemplateAPI<{ definitionExtensions: { general: TestValidationAndParsingAPI; }; }>();
 
+
+/** Strips the root `$schema` dialect so specs can compare schema bodies. */
+export function withoutDialect(schema: JSONSchema): JSONSchema
+{
+    const { $schema, ...body } = schema;
+    return body;
+}
 
 export function assertParseSuccess<T>(result: ParseResult<T>, expectedValue: T): void
 {

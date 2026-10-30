@@ -1,5 +1,5 @@
 import * as assert from "node:assert";
-import { arrayOf, number, record, recordOf, string, assertParseSuccess } from "../../../tests/util/spec-support.ts";
+import { array, arrayOf, number, record, recordOf, string, assertParseSuccess, withoutDialect } from "../../../tests/util/spec-support.ts";
 
 export class RecordDefinitionTests
 {
@@ -121,5 +121,41 @@ export class ArrayDefinitionTests
     {
         const t = arrayOf(number);
         assertParseSuccess(t.parseString("[1, 2, 3]"), [1, 2, 3]);
+    }
+}
+
+export class CollectionJSONSchemaTests
+{
+    arraysExportTheirItemSchema()
+    {
+        assert.deepStrictEqual(withoutDialect(arrayOf(string).toJSONSchema()), { type: "array", items: { type: "string" } });
+    }
+
+    inferredArraysExportTheirExampleAsDefault()
+    {
+        assert.deepStrictEqual(withoutDialect(array([1, 2]).toJSONSchema()), { type: "array", items: { type: "number" }, default: [1, 2] });
+    }
+
+    recordsExportTheirValueSchemaAsAdditionalProperties()
+    {
+        assert.deepStrictEqual(withoutDialect(recordOf({ title: string() }).toJSONSchema()), {
+            type: "object",
+            additionalProperties: { type: "object", properties: { title: { type: "string" } }, required: ["title"], additionalProperties: false },
+        });
+    }
+
+    inferredRecordsExportTheirExampleAsDefault()
+    {
+        assert.deepStrictEqual(withoutDialect(record({ alice: "admin" }).toJSONSchema()), {
+            type: "object",
+            additionalProperties: { type: "string" },
+            default: { alice: "admin" },
+        });
+    }
+
+    entryValidatorsAreOmitted()
+    {
+        const t = arrayOf(number).acceptsEntries((key: string | number, v: number) => v > 0);
+        assert.deepStrictEqual(withoutDialect(t.toJSONSchema()), { type: "array", items: { type: "number" } });
     }
 }

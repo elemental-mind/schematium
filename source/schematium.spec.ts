@@ -1,6 +1,6 @@
 import * as assert from "node:assert";
-import { array, arrayOf, boolean, number, object, record, recordOf, string, validatorFor, valueOf } from "./schematium.ts";
-import type { MemberReflectionAPI, ReflectionAPI, ValidationAndParsingAPI, ValidationContext, ValueType } from "./schematium.ts";
+import { array, arrayOf, boolean, number, object, oneOf, record, recordOf, string, validatorFor, valueOf } from "./schematium.ts";
+import type { JSONSchema, MemberReflectionAPI, ReflectionAPI, ValidationAndParsingAPI, ValidationContext, ValueType } from "./schematium.ts";
 
 export class PublicTypeExportTests
 {
@@ -257,5 +257,32 @@ export class DefaultValueTests
         assert.notStrictEqual(firstDefault, secondDefault);
         assert.deepStrictEqual(firstDefault, ["stable"]);
         assert.deepStrictEqual(secondDefault, ["stable"]);
+    }
+}
+
+export class JSONSchemaExportTests
+{
+    exportsAJSONSchemaDocument()
+    {
+        const User = validatorFor({
+            name: string("anonymous"),
+            age: number().accepts(value => value >= 0),
+            role: oneOf("admin", "user"),
+            tags: arrayOf(string).withDefault([]),
+        });
+        const schema: JSONSchema = User.toJSONSchema();
+
+        assert.deepStrictEqual(schema, {
+            $schema: "https://json-schema.org/draft/2020-12/schema",
+            type: "object",
+            properties: {
+                name: { type: "string", default: "anonymous" },
+                age: { type: "number" },
+                role: { type: "string", enum: ["admin", "user"] },
+                tags: { type: "array", items: { type: "string" }, default: [] },
+            },
+            required: ["age", "role"],
+            additionalProperties: false,
+        });
     }
 }

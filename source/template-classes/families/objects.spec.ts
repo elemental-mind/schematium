@@ -314,3 +314,88 @@ export class ObjectFactoryTests
         assert.strictEqual(result.issues[0].kind, "TypeMismatch");
     }
 }
+
+export class ObjectJSONSchemaTests
+{
+    requiredListFollowsMemberOptionality()
+    {
+        const schema = validatorFor({
+            name: string(),
+            nickname: string("none"),
+            note: string().optional,
+            port: number(8080).required,
+        }).toJSONSchema();
+
+        assert.deepStrictEqual(schema.required, ["name", "port"]);
+    }
+
+    nestedObjectsFollowTheirMembersOptionality()
+    {
+        const schema = validatorFor({
+            server: { host: string("localhost") },
+            auth: { token: string() },
+        }).toJSONSchema();
+
+        assert.deepStrictEqual(schema.required, ["auth"]);
+        assert.deepStrictEqual(schema.properties!.server, {
+            type: "object",
+            properties: { host: { type: "string", default: "localhost" } },
+            additionalProperties: false,
+        });
+    }
+
+    allowPartialDropsEveryRequiredList()
+    {
+        const schema = validatorFor({ name: string(), auth: { token: string() } }).toJSONSchema({ allowPartial: true });
+
+        assert.strictEqual(schema.required, undefined);
+        assert.strictEqual(schema.properties!.auth.required, undefined);
+    }
+
+    allowUnknownsOpensEveryObject()
+    {
+        const schema = validatorFor({ auth: { token: string() } }).toJSONSchema({ allowUnknowns: true });
+
+        assert.strictEqual(schema.additionalProperties, undefined);
+        assert.strictEqual(schema.properties!.auth.additionalProperties, undefined);
+    }
+
+    onlyExplicitObjectDefaultsAreExported()
+    {
+        const synthesized = validatorFor({ host: string("localhost") }).toJSONSchema();
+        const explicit = object({ host: string() }).withDefault({ host: "example.com" }).toJSONSchema();
+
+        assert.strictEqual(synthesized.default, undefined);
+        assert.deepStrictEqual(explicit.default, { host: "example.com" });
+    }
+
+    sharedTemplatesAreInlinedAtEveryUse()
+    {
+        const Post = { title: string() };
+        const schema = validatorFor({ draft: Post, published: Post }).toJSONSchema();
+
+        assert.strictEqual(schema.properties!.draft.$ref, undefined);
+        assert.deepStrictEqual(schema.properties!.draft, schema.properties!.published);
+    }
+
+    cyclicTemplatesReferenceTheirAncestor()
+    {
+        const Node: TemplateObject = { value: number() };
+        Node.link = { next: Node };
+
+        const schema = validatorFor(Node).toJSONSchema();
+
+        assert.deepStrictEqual(schema.properties!.link.properties!.next, { $ref: "#" });
+    }
+
+    cyclicReferencesEscapeTheirJSONPointer()
+    {
+        const Node: TemplateObject = { value: number() };
+        Node.link = { next: Node };
+
+        const schema = validatorFor({ "nodes/main ~1": Node }).toJSONSchema();
+        const node = schema.properties!["nodes/main ~1"];
+
+        assert.deepStrictEqual(node.properties!.link.properties!.next, { $ref: "#/properties/nodes~1main%20~01" });
+    }
+}

@@ -885,3 +885,37 @@ export class SchemaAlignedAssignTests
         assert.deepStrictEqual(result, { host: "localhost", port: 8080, debug: true });
     }
 }
+
+export class JSONSchemaExportTests
+{
+    dialectIsDeclaredOnlyAtTheRoot()
+    {
+        const schema = validatorFor({ server: { host: string() } }).toJSONSchema();
+
+        assert.strictEqual(schema.$schema, "https://json-schema.org/draft/2020-12/schema");
+        assert.strictEqual(schema.properties!.server.$schema, undefined);
+    }
+
+    memberValidatorsExportTheirOwnDocument()
+    {
+        const schema = validatorFor({ server: { host: string() } }).entries.server.toJSONSchema();
+
+        assert.deepStrictEqual(schema, {
+            $schema: "https://json-schema.org/draft/2020-12/schema",
+            type: "object",
+            properties: { host: { type: "string" } },
+            required: ["host"],
+            additionalProperties: false,
+        });
+    }
+
+    schemaDefaultsDoNotShareTheTemplateDefault()
+    {
+        const sharedDefault = ["stable"];
+        const schema = arrayOf(string).withDefault(sharedDefault, false).toJSONSchema();
+
+        (schema.default as string[]).push("beta");
+
+        assert.deepStrictEqual(sharedDefault, ["stable"]);
+    }
+}

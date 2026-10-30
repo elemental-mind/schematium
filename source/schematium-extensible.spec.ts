@@ -2,7 +2,7 @@ import { Debug } from "unitium";
 import * as assert from "node:assert";
 import { generateTemplateAPI, ValueType } from "./schematium-extensible.ts";
 import { StringTemplate } from "./template-classes/families/primitives.ts";
-import type { MemberReflectionAPI, ReflectionAPI, TemplateMixin, ValidationAndParsingAPI, ValueTemplateConstructor } from "./schematium-extensible.ts";
+import type { JSONSchema, JSONSchemaContext, MemberReflectionAPI, ReflectionAPI, TemplateMixin, ValidationAndParsingAPI, ValueTemplateConstructor } from "./schematium-extensible.ts";
 
 export class PublicTypeExportTests
 {
@@ -276,5 +276,33 @@ export class DefinitionApiExtensionTests
         valueOf(number, string).typeDependentClosure((value: string | number) => true);
         //@ts-expect-error should throw because boll | number  =! number | string
         valueOf(number, string).typeDependentClosure((value: bool | number) => true);
+    }
+
+    jsonSchemaOutputCanBeExtended()
+    {
+        function withDescriptions(Base: ValueTemplateConstructor)
+        {
+            return class extends Base
+            {
+                description?: string;
+                describe(description: string): this
+                {
+                    this.description = description;
+                    return this;
+                }
+                buildJSONSchema(context: JSONSchemaContext): JSONSchema
+                {
+                    const schema = super.buildJSONSchema(context);
+                    return this.description ? { ...schema, description: this.description } : schema;
+                }
+            };
+        }
+        type Describable = InstanceType<ReturnType<typeof withDescriptions>>;
+
+        const { string, validatorFor } = generateTemplateAPI<{ definitionExtensions: { general: Describable; }; }>(withDescriptions);
+        const schema = validatorFor({ name: string("anonymous").describe("Display name") }).toJSONSchema();
+
+        assert.deepStrictEqual(schema.properties!.name, { type: "string", default: "anonymous", description: "Display name" });
+        assert.strictEqual(schema.description, undefined);
     }
 }

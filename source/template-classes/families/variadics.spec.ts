@@ -1,5 +1,5 @@
 import * as assert from "node:assert";
-import { arrayOf, boolean, number, string, valueOf, assertParseSuccess } from "../../../tests/util/spec-support.ts";
+import { arrayOf, boolean, number, oneOf, string, valueOf, ValidationIssue, assertParseSuccess, withoutDialect, type ValidationContext } from "../../../tests/util/spec-support.ts";
 
 export class VariadicDefinitionTests
 {
@@ -253,5 +253,75 @@ export class VariadicObjectDiscernmentTests
         assert.strictEqual(t.check(42), true, "expected number to pass");
         assert.strictEqual(t.check("hello"), true, "expected string to pass");
         assert.strictEqual(t.check(true), false, "expected boolean to fail");
+    }
+}
+
+// ============================================================
+// Custom validators on variadics and their branches
+// ============================================================
+
+export class VariadicCustomValidatorTests
+{
+    branchValidatorsApplyDuringValidation()
+    {
+        const t = valueOf(number().accepts((v: number) => v > 0), string);
+
+        assert.strictEqual(t.check(1), true);
+        assert.strictEqual(t.check("text"), true);
+        assert.strictEqual(t.check(-1), false);
+    }
+
+    branchContextValidatorsApplyDuringValidation()
+    {
+        const t = valueOf(number().accepts((v: number, context: ValidationContext) =>
+        {
+            if (v < 0) context.rejectWith(ValidationIssue, "Negative number");
+        }), string);
+
+        assert.strictEqual(t.check(1), true);
+        assert.strictEqual(t.validate(-1, { mode: "thorough" }).success, false);
+    }
+
+    ownValidatorRejectsParsedValue()
+    {
+        const t = oneOf(1, 2).accepts((v: number) => v !== 2);
+
+        assertParseSuccess(t.parseString("1"), 1);
+        assert.strictEqual(t.parseString("2").success, false);
+    }
+
+    ownValidatorFallsBackToTheNextParsedCandidate()
+    {
+        // "-1" parses as number first, which the validator rejects, so the string candidate wins
+        const t = valueOf(number, string).accepts((v: number | string) => typeof v === "string" || v > 0);
+
+        assertParseSuccess(t.parseString("5"), 5);
+        assertParseSuccess(t.parseString("-1"), "-1");
+    }
+}
+
+export class VariadicJSONSchemaTests
+{
+    variadicsExportAsAnyOf()
+    {
+        assert.deepStrictEqual(withoutDialect(valueOf(string, { id: number() }).toJSONSchema()), {
+            anyOf: [
+                { type: "object", properties: { id: { type: "number" } }, required: ["id"], additionalProperties: false },
+                { type: "string" },
+            ],
+        });
+    }
+
+    literalsMixedWithTypesStayAnyOf()
+    {
+        assert.deepStrictEqual(withoutDialect(valueOf("auto", number).toJSONSchema()), {
+            anyOf: [{ type: "number" }, { type: "string", const: "auto" }],
+        });
+    }
+
+    variadicDefaultsBecomeSchemaDefaults()
+    {
+        const t = valueOf(number, string).withDefault("auto");
+        assert.deepStrictEqual(withoutDialect(t.toJSONSchema()), { anyOf: [{ type: "number" }, { type: "string" }], default: "auto" });
     }
 }

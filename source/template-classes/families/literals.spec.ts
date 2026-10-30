@@ -1,5 +1,5 @@
 import * as assert from "node:assert";
-import { oneOf, RejectionResult, assertParseSuccess } from "../../../tests/util/spec-support.ts";
+import { oneOf, RejectionResult, validatorFor, assertParseSuccess, withoutDialect } from "../../../tests/util/spec-support.ts";
 
 export class OneOfDefinitionTests
 {
@@ -104,5 +104,34 @@ export class OneOfDefinitionTests
         assert.strictEqual(t.check(1), true);
         assert.strictEqual(t.check("1"), false);
         assert.strictEqual(t.check("no"), false);
+    }
+}
+
+export class LiteralJSONSchemaTests
+{
+    literalsExportAsTypedConstants()
+    {
+        const schema = validatorFor({ kind: "created", version: 1 }).toJSONSchema();
+
+        assert.deepStrictEqual(schema.properties, {
+            kind: { type: "string", const: "created" },
+            version: { type: "number", const: 1 },
+        });
+    }
+
+    oneOfExportsATypedEnum()
+    {
+        assert.deepStrictEqual(withoutDialect(oneOf("admin", "user").toJSONSchema()), { type: "string", enum: ["admin", "user"] });
+    }
+
+    mixedTypeOneOfExportsAnUntypedEnum()
+    {
+        assert.deepStrictEqual(withoutDialect(oneOf("yes", 1).toJSONSchema()), { enum: ["yes", 1] });
+    }
+
+    oneOfDefaultsBecomeSchemaDefaults()
+    {
+        const t = oneOf("dev", "prod").withDefault("dev");
+        assert.deepStrictEqual(withoutDialect(t.toJSONSchema()), { type: "string", enum: ["dev", "prod"], default: "dev" });
     }
 }
